@@ -103,7 +103,6 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
           points_earned: outcome.points,
           notes,
           is_voicemail: selectedOutcome === 'voicemail',
-          created_at: new Date().toISOString(),
         })
         .select()
         .single();

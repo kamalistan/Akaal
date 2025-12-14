@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,40 +20,67 @@ Deno.serve(async (req: Request) => {
     const ghlLocationId = Deno.env.get('GHL_LOCATION_ID');
 
     if (!ghlApiKey || !ghlLocationId) {
-      throw new Error('GoHighLevel API key or Location ID not configured');
+      throw new Error('GoHighLevel API key or Location ID not configured. Please add GHL_API_KEY and GHL_LOCATION_ID to your environment variables.');
     }
 
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
     const pipelinesResponse = await fetch(
-      `https://rest.gohighlevel.com/v1/pipelines/?locationId=${ghlLocationId}`,
+      `https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${ghlLocationId}`,
       {
         headers: {
           'Authorization': `Bearer ${ghlApiKey}`,
+          'Version': '2021-07-28',
+          'Accept': 'application/json',
         },
       }
     );
 
     if (!pipelinesResponse.ok) {
-      throw new Error('Failed to fetch pipelines from GoHighLevel');
+      const errorText = await pipelinesResponse.text();
+      throw new Error(`Failed to fetch pipelines from GoHighLevel: ${pipelinesResponse.status} - ${errorText}`);
     }
 
     const pipelinesData = await pipelinesResponse.json();
+    const pipelines = pipelinesData.pipelines || [];
 
-    const locationResponse = await fetch(
-      `https://rest.gohighlevel.com/v1/locations/${ghlLocationId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${ghlApiKey}`,
-        },
+    for (const pipeline of pipelines) {
+      const { data: existing } = await supabase
+        .from('ghl_pipelines')
+        .select('id')
+        .eq('ghl_pipeline_id', pipeline.id)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('ghl_pipelines')
+          .update({
+            name: pipeline.name,
+            stages: pipeline.stages || [],
+            location_id: ghlLocationId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('ghl_pipelines')
+          .insert({
+            ghl_pipeline_id: pipeline.id,
+            name: pipeline.name,
+            stages: pipeline.stages || [],
+            location_id: ghlLocationId,
+            is_active: true,
+          });
       }
-    );
-
-    const locationData = locationResponse.ok ? await locationResponse.json() : null;
+    }
 
     return new Response(
       JSON.stringify({
-        pipelines: pipelinesData.pipelines || [],
+        pipelines: pipelines,
         locationId: ghlLocationId,
-        locationName: locationData?.location?.name || 'Unknown Location',
       }),
       {
         headers: {

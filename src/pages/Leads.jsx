@@ -19,15 +19,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Plus, 
-  Search, 
-  Phone, 
-  Building2, 
+import {
+  Plus,
+  Search,
+  Phone,
+  Building2,
   Mail,
   Trash2,
   Upload,
-  Download
+  Download,
+  DollarSign,
+  TrendingUp
 } from 'lucide-react';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
@@ -99,7 +101,10 @@ export default function Leads() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('leads')
-        .select('*')
+        .select(`
+          *,
+          pipeline:ghl_pipelines(id, name, stages)
+        `)
         .order('created_date', { ascending: false });
 
       if (error) throw error;
@@ -172,7 +177,8 @@ export default function Leads() {
       setShowGHLModal(false);
       setSelectedPipeline('');
 
-      alert(`Successfully imported ${response.imported} leads (${response.skipped} duplicates skipped)`);
+      const message = `Import Complete!\n\nNew Leads: ${response.imported}\nUpdated: ${response.updated}\nSkipped: ${response.skipped}\nTotal Processed: ${response.total}`;
+      alert(message);
     } catch (error) {
       alert('Failed to import leads: ' + error.message);
     } finally {
@@ -292,6 +298,8 @@ export default function Leads() {
                 <TableHead className="font-semibold text-purple-300">Name</TableHead>
                 <TableHead className="font-semibold text-purple-300">Company</TableHead>
                 <TableHead className="font-semibold text-purple-300">Phone</TableHead>
+                <TableHead className="font-semibold text-purple-300">Pipeline</TableHead>
+                <TableHead className="font-semibold text-purple-300">Value</TableHead>
                 <TableHead className="font-semibold text-purple-300">Status</TableHead>
                 <TableHead className="font-semibold text-purple-300">Calls</TableHead>
                 <TableHead className="font-semibold text-purple-300 w-20"></TableHead>
@@ -335,6 +343,28 @@ export default function Leads() {
                         <Phone className="w-4 h-4" />
                         {lead.phone}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {lead.pipeline?.name ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
+                            <TrendingUp className="w-3 h-3 mr-1" />
+                            {lead.pipeline.name}
+                          </Badge>
+                        </div>
+                      ) : (
+                        <span className="text-purple-400 text-sm">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {lead.opportunity_value ? (
+                        <div className="flex items-center gap-1 text-emerald-400 font-semibold">
+                          <DollarSign className="w-4 h-4" />
+                          {parseFloat(lead.opportunity_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      ) : (
+                        <span className="text-purple-400 text-sm">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge className={`${statusColors[lead.status]} capitalize`}>

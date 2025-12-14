@@ -12,12 +12,6 @@ import Achievements from "./Achievements";
 
 import Settings from "./Settings";
 
-import MusicHomework from "./MusicHomework";
-
-import CreateAssignment from "./CreateAssignment";
-
-import GenerateHomework from "./GenerateHomework";
-
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -31,15 +25,9 @@ const PAGES = {
     Metrics: Metrics,
     
     Achievements: Achievements,
-    
+
     Settings: Settings,
-    
-    MusicHomework: MusicHomework,
-    
-    CreateAssignment: CreateAssignment,
-    
-    GenerateHomework: GenerateHomework,
-    
+
 }
 
 function _getCurrentPage(url) {
@@ -76,15 +64,9 @@ function PagesContent() {
                 <Route path="/Metrics" element={<Metrics />} />
                 
                 <Route path="/Achievements" element={<Achievements />} />
-                
+
                 <Route path="/Settings" element={<Settings />} />
-                
-                <Route path="/MusicHomework" element={<MusicHomework />} />
-                
-                <Route path="/CreateAssignment" element={<CreateAssignment />} />
-                
-                <Route path="/GenerateHomework" element={<GenerateHomework />} />
-                
+
             </Routes>
         </Layout>
     );

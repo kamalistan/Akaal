@@ -50,6 +50,7 @@ export default function Leads() {
   const [searchTerm, setSearchTerm] = useState('');
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', company: '' });
   const [selectedPipeline, setSelectedPipeline] = useState('');
+  const [selectedStage, setSelectedStage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const queryClient = useQueryClient();
 
@@ -162,13 +163,22 @@ export default function Leads() {
     enabled: showGHLModal,
   });
 
+  const { data: stagesData, isLoading: stagesLoading } = useQuery({
+    queryKey: ['ghlStages', selectedPipeline],
+    queryFn: async () => {
+      return await callEdgeFunction('ghlGetPipelineStages', { pipelineId: selectedPipeline });
+    },
+    enabled: !!selectedPipeline,
+  });
+
   const handleGHLImport = async () => {
-    if (!selectedPipeline || !ghlData?.locationId) return;
+    if (!selectedPipeline || !selectedStage || !ghlData?.locationId) return;
 
     setIsImporting(true);
     try {
       const response = await callEdgeFunction('ghlImportLeads', {
         pipelineId: selectedPipeline,
+        stageId: selectedStage,
         locationId: ghlData.locationId
       });
 
@@ -176,6 +186,7 @@ export default function Leads() {
       queryClient.invalidateQueries(['leads']);
       setShowGHLModal(false);
       setSelectedPipeline('');
+      setSelectedStage('');
 
       const message = `Import Complete!\n\nNew Leads: ${response.imported}\nUpdated: ${response.updated}\nSkipped: ${response.skipped}\nTotal Processed: ${response.total}`;
       alert(message);
@@ -468,7 +479,10 @@ export default function Leads() {
                   </label>
                   <select
                     value={selectedPipeline}
-                    onChange={(e) => setSelectedPipeline(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedPipeline(e.target.value);
+                      setSelectedStage('');
+                    }}
                     className="w-full h-12 rounded-xl border border-slate-200 px-4 bg-white"
                   >
                     <option value="">Choose a pipeline...</option>
@@ -479,10 +493,39 @@ export default function Leads() {
                     ))}
                   </select>
                 </div>
+                {selectedPipeline && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 mb-2 block">
+                      Select Stage
+                    </label>
+                    {stagesLoading ? (
+                      <div className="w-full h-12 rounded-xl border border-slate-200 px-4 bg-white flex items-center text-slate-500">
+                        Loading stages...
+                      </div>
+                    ) : stagesData?.stages ? (
+                      <select
+                        value={selectedStage}
+                        onChange={(e) => setSelectedStage(e.target.value)}
+                        className="w-full h-12 rounded-xl border border-slate-200 px-4 bg-white"
+                      >
+                        <option value="">Choose a stage...</option>
+                        {stagesData.stages.map((stage) => (
+                          <option key={stage.id} value={stage.id}>
+                            {stage.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="w-full h-12 rounded-xl border border-red-200 px-4 bg-red-50 flex items-center text-red-500">
+                        Failed to load stages
+                      </div>
+                    )}
+                  </div>
+                )}
                 <Button
                   onClick={handleGHLImport}
-                  disabled={!selectedPipeline || isImporting}
-                  className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl"
+                  disabled={!selectedPipeline || !selectedStage || isImporting}
+                  className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isImporting ? 'Importing...' : 'Import Leads'}
                 </Button>

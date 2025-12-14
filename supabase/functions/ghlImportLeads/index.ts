@@ -16,7 +16,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { pipelineId, locationId, pipelineStageIds } = await req.json();
+    const { pipelineId, locationId, stageId, pipelineStageIds } = await req.json();
     const ghlApiKey = Deno.env.get('GHL_API_KEY');
 
     if (!ghlApiKey) {
@@ -53,9 +53,11 @@ Deno.serve(async (req: Request) => {
       pipeline_id: pipelineId,
     });
 
-    if (pipelineStageIds && pipelineStageIds.length > 0) {
-      pipelineStageIds.forEach((stageId: string) => {
-        searchParams.append('pipeline_stage_id', stageId);
+    const stagesToFilter = pipelineStageIds || (stageId ? [stageId] : []);
+
+    if (stagesToFilter && stagesToFilter.length > 0) {
+      stagesToFilter.forEach((stage: string) => {
+        searchParams.append('pipeline_stage_id', stage);
       });
     }
 

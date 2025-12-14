@@ -13,6 +13,7 @@ import AIPerformanceCoach from '@/components/ai/AIPerformanceCoach';
 import { Link as LinkIcon, Filter, BarChart3, PhoneCall } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useTheme } from '@/contexts/ThemeContext';
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -22,6 +23,7 @@ export default function Home() {
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [selectedPipeline, setSelectedPipeline] = useState('all');
   const queryClient = useQueryClient();
+  const { theme } = useTheme();
 
   useEffect(() => {
     const loadUser = async () => {
@@ -149,11 +151,11 @@ export default function Home() {
   }, {});
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a0f2e] via-[#2d1f4a] to-[#1a0f2e] relative overflow-hidden">
+    <div className={`min-h-screen bg-gradient-to-br ${theme.background} relative overflow-hidden`}>
       {/* Ambient glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
+        <div className={`absolute top-1/4 left-1/4 w-96 h-96 ${theme.primaryGlow} rounded-full blur-3xl`} />
+        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 ${theme.secondaryGlow} rounded-full blur-3xl`} />
       </div>
 
       {/* Content */}
@@ -164,40 +166,27 @@ export default function Home() {
           <TabNav />
         </div>
 
-        {/* Pipeline Filter */}
+        {/* Pipeline Filter - Minimalistic */}
         {pipelines.length > 0 && (
           <motion.div
-            className="mb-6 bg-[#2d1f4a]/50 backdrop-blur-sm rounded-2xl p-4 border border-purple-500/20"
+            className="mb-4"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3">
               <Filter className="w-4 h-4 text-purple-400" />
-              <span className="text-purple-300 font-medium text-sm">Filter by Pipeline</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={selectedPipeline === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedPipeline('all')}
-                className={`rounded-xl ${selectedPipeline === 'all' ? 'bg-indigo-600' : 'border-purple-500/30'}`}
+              <select
+                value={selectedPipeline}
+                onChange={(e) => setSelectedPipeline(e.target.value)}
+                className="px-4 py-2 bg-[#2d1f4a]/80 backdrop-blur-sm border border-purple-500/20 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                All Leads ({leads.length})
-              </Button>
-              {pipelines.map(pipeline => {
-                const pipelineLeadCount = leads.filter(l => l.pipeline_id === pipeline.id).length;
-                return (
-                  <Button
-                    key={pipeline.id}
-                    variant={selectedPipeline === pipeline.id ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSelectedPipeline(pipeline.id)}
-                    className={`rounded-xl ${selectedPipeline === pipeline.id ? 'bg-indigo-600' : 'border-purple-500/30'}`}
-                  >
-                    {pipeline.name} ({pipelineLeadCount})
-                  </Button>
-                );
-              })}
+                <option value="all">All Leads</option>
+                {pipelines.map(pipeline => (
+                  <option key={pipeline.id} value={pipeline.id}>
+                    {pipeline.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </motion.div>
         )}

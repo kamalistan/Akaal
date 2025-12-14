@@ -52,6 +52,7 @@ export default function Leads() {
   const [selectedPipeline, setSelectedPipeline] = useState('');
   const [selectedStage, setSelectedStage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [viewingPipelineId, setViewingPipelineId] = useState(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -109,6 +110,19 @@ export default function Leads() {
         .order('created_date', { ascending: false });
 
       if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const { data: pipelines = [] } = useQuery({
+    queryKey: ['pipelines'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ghl_pipelines')
+        .select('*')
+        .order('name');
+
+      if (error && error.code !== 'PGRST116') throw error;
       return data || [];
     },
   });
@@ -229,11 +243,24 @@ export default function Leads() {
     queryClient.invalidateQueries(['leads']);
   };
 
-  const filteredLeads = leads.filter(lead => 
-    lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    lead.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    lead.phone?.includes(searchTerm)
-  );
+  const filteredLeads = leads.filter(lead => {
+    const matchesSearch = lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      lead.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      lead.phone?.includes(searchTerm);
+
+    if (viewingPipelineId) {
+      return matchesSearch && lead.pipeline_id === viewingPipelineId;
+    }
+
+    return matchesSearch;
+  });
+
+  const leadsWithoutPipeline = leads.filter(l => !l.pipeline_id);
+
+  const pipelinesWithLeads = pipelines.map(pipeline => ({
+    ...pipeline,
+    leadCount: leads.filter(l => l.pipeline_id === pipeline.id).length
+  })).filter(p => p.leadCount > 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a0f2e] via-[#2d1f4a] to-[#1a0f2e] relative overflow-hidden">
@@ -289,7 +316,7 @@ export default function Leads() {
         </motion.div>
 
         {/* Search */}
-        <motion.div 
+        <motion.div
           className="mb-6"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -306,7 +333,122 @@ export default function Leads() {
           </div>
         </motion.div>
 
-        {/* Table */}
+        {/* Pipeline Selection or Leads Table */}
+        {!viewingPipelineId ? (
+          <>
+            {/* Pipeline Cards */}
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              {pipelinesWithLeads.map((pipeline, index) => (
+                <motion.div
+                  key={pipeline.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.1 }}
+                  onClick={() => setViewingPipelineId(pipeline.id)}
+                  className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20 cursor-pointer hover:border-indigo-500/40 transition-all hover:scale-105"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                        <TrendingUp className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{pipeline.name}</h3>
+                        <p className="text-purple-300 text-sm">{pipeline.leadCount} leads</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+                    <p className="text-indigo-300 text-sm">Click to view leads in this pipeline</p>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+
+            {/* Leads without Pipeline */}
+            {leadsWithoutPipeline.length > 0 && (
+              <motion.div
+                className="mb-8"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-white">Leads Without Pipeline</h2>
+                  <Badge variant="outline" className="text-purple-400 border-purple-500/30">
+                    {leadsWithoutPipeline.length} leads
+                  </Badge>
+                </div>
+                <div className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl border border-purple-500/20 overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-purple-500/20">
+                        <TableHead className="font-semibold text-purple-300">Name</TableHead>
+                        <TableHead className="font-semibold text-purple-300">Company</TableHead>
+                        <TableHead className="font-semibold text-purple-300">Phone</TableHead>
+                        <TableHead className="font-semibold text-purple-300">Status</TableHead>
+                        <TableHead className="font-semibold text-purple-300 w-20"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leadsWithoutPipeline.map((lead) => (
+                        <TableRow key={lead.id} className="hover:bg-purple-900/20 transition-colors border-purple-500/20">
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-semibold">
+                                {lead.name?.[0]?.toUpperCase() || '?'}
+                              </div>
+                              <p className="font-medium text-white">{lead.name}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-purple-200">{lead.company || '-'}</TableCell>
+                          <TableCell className="text-purple-200 font-mono">{lead.phone}</TableCell>
+                          <TableCell>
+                            <Badge className={`${statusColors[lead.status]} capitalize`}>
+                              {lead.status?.replace('_', ' ') || 'new'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteMutation.mutate(lead.id)}
+                              className="text-purple-400 hover:text-red-400"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </motion.div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Back Button */}
+            <motion.div
+              className="mb-6"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+            >
+              <Button
+                variant="outline"
+                onClick={() => setViewingPipelineId(null)}
+                className="rounded-xl text-purple-300 border-purple-500/30"
+              >
+                ← Back to Pipelines
+              </Button>
+            </motion.div>
+
+            {/* Table */}
         <motion.div 
           className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl border border-purple-500/20 overflow-hidden"
           initial={{ opacity: 0, y: 20 }}
@@ -417,6 +559,8 @@ export default function Leads() {
             </div>
           )}
         </motion.div>
+          </>
+        )}
       </div>
 
       {/* Add Lead Modal */}

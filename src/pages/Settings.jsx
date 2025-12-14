@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { User, Target, LogOut, Link as LinkIcon, Phone, Clock, Palette, Calendar, DollarSign } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useTheme } from '@/contexts/ThemeContext';
 
 export default function Settings() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -27,6 +28,7 @@ export default function Settings() {
   });
   const [cashGoal, setCashGoal] = useState(10000);
   const queryClient = useQueryClient();
+  const { currentTheme, changeTheme, themes: themeOptions } = useTheme();
 
   useEffect(() => {
     const loadUser = async () => {
@@ -277,17 +279,17 @@ export default function Settings() {
               <h2 className="text-xl font-bold text-white">Theme</h2>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              {['regular', 'dark', 'christmas'].map((theme) => (
+              {Object.keys(themeOptions).map((themeKey) => (
                 <button
-                  key={theme}
-                  onClick={() => handleSettingChange('theme', theme)}
+                  key={themeKey}
+                  onClick={() => changeTheme(themeKey)}
                   className={`p-4 rounded-2xl border-2 transition-all capitalize ${
-                    settings.theme === theme
+                    currentTheme === themeKey
                       ? 'border-indigo-500 bg-indigo-50/10'
                       : 'border-purple-500/20 hover:border-purple-500/40'
                   }`}
                 >
-                  <p className="text-white font-medium">{theme}</p>
+                  <p className="text-white font-medium">{themeOptions[themeKey].name}</p>
                 </button>
               ))}
             </div>

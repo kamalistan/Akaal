@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Trophy, Flame, Phone, CalendarCheck, TrendingUp, Users, Target, Award } from 'lucide-react';
+import { Trophy, Flame, Phone, CalendarCheck, TrendingUp, Users, Target, Award, DollarSign } from 'lucide-react';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 
@@ -81,13 +81,14 @@ export default function Leaderboard() {
     totalCalls: allStats.reduce((sum, stat) => sum + (stat.calls_today || 0), 0),
     totalAppointments: allStats.reduce((sum, stat) => sum + (stat.appointments_today || 0), 0),
     totalPoints: allStats.reduce((sum, stat) => sum + (stat.total_points || 0), 0),
-    averageStreak: allStats.length > 0 
+    totalCashCollected: allStats.reduce((sum, stat) => sum + (stat.cash_collected || 0), 0),
+    averageStreak: allStats.length > 0
       ? (allStats.reduce((sum, stat) => sum + (stat.current_streak || 0), 0) / allStats.length).toFixed(1)
       : 0,
     teamMembers: allStats.length,
     topPerformer: allStats[0]?.user_email?.split('@')[0] || 'N/A',
     conversionRate: allStats.reduce((sum, stat) => sum + (stat.calls_today || 0), 0) > 0
-      ? ((allStats.reduce((sum, stat) => sum + (stat.appointments_today || 0), 0) / 
+      ? ((allStats.reduce((sum, stat) => sum + (stat.appointments_today || 0), 0) /
           allStats.reduce((sum, stat) => sum + (stat.calls_today || 0), 0)) * 100).toFixed(1)
       : 0
   };
@@ -122,8 +123,8 @@ export default function Leaderboard() {
           </motion.div>
 
           {/* Team Stats Overview */}
-          <motion.div 
-            className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10"
+          <motion.div
+            className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -144,6 +145,15 @@ export default function Leaderboard() {
               </div>
               <p className="text-3xl font-bold text-white">{teamStats.totalAppointments}</p>
               <p className="text-xs text-purple-400 mt-1">{teamStats.conversionRate}% conversion</p>
+            </div>
+
+            <div className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-2xl p-6 border border-emerald-500/20">
+              <div className="flex items-center gap-3 mb-2">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+                <span className="text-purple-300 text-sm">Cash Collected</span>
+              </div>
+              <p className="text-3xl font-bold text-emerald-400">${teamStats.totalCashCollected.toLocaleString()}</p>
+              <p className="text-xs text-emerald-300 mt-1">Team revenue</p>
             </div>
 
             <div className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-2xl p-6 border border-purple-500/20">
@@ -276,6 +286,10 @@ export default function Leaderboard() {
                       <span className="flex items-center gap-1">
                         <CalendarCheck className="w-3 h-3" />
                         {stat.appointments_today || 0}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="w-3 h-3 text-emerald-400" />
+                        ${stat.cash_collected?.toLocaleString() || 0}
                       </span>
                       <span className="flex items-center gap-1">
                         <Flame className="w-3 h-3 text-orange-500" />

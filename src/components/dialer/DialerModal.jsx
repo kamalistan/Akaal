@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, Pause, Play, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from '@/lib/supabase';
+import { supabase, callEdgeFunction } from '@/lib/supabase';
 
 const outcomeOptions = [
   { value: 'appointment_set', label: 'Appointment Set', icon: Calendar, points: 100, color: 'bg-emerald-500' },
@@ -15,7 +15,7 @@ const outcomeOptions = [
 ];
 
 export default function DialerModal({ lead, onClose, onComplete, userStats }) {
-  const [callState, setCallState] = useState('ready'); // ready, calling, ended
+  const [callState, setCallState] = useState('ready'); // ready, calling, connected, ended
   const [duration, setDuration] = useState(0);
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState('');
@@ -25,24 +25,74 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
   const [showSummary, setShowSummary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [callError, setCallError] = useState('');
+  const [twilioCallSid, setTwilioCallSid] = useState(null);
+  const [showCalendly, setShowCalendly] = useState(false);
+  const [calendlyUrl, setCalendlyUrl] = useState('');
   const timerRef = useRef(null);
 
   useEffect(() => {
+    const loadCalendlyUrl = async () => {
+      const { data } = await supabase
+        .from('dialer_settings')
+        .select('calendly_url')
+        .eq('user_email', 'demo@example.com')
+        .maybeSingle();
+
+      if (data?.calendly_url) {
+        setCalendlyUrl(data.calendly_url);
+      }
+    };
+
+    loadCalendlyUrl();
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  const startCall = () => {
+  const startCall = async () => {
     setCallState('calling');
-    timerRef.current = setInterval(() => {
-      if (!isPaused) {
-        setDuration(d => d + 1);
+    setCallError('');
+
+    try {
+      const response = await callEdgeFunction('twilioInitiateCall', {
+        to: lead.phone,
+        leadId: lead.id,
+        leadName: lead.name,
+      });
+
+      if (response.success) {
+        setTwilioCallSid(response.callSid);
+        setCallState('connected');
+
+        timerRef.current = setInterval(() => {
+          if (!isPaused) {
+            setDuration(d => d + 1);
+          }
+        }, 1000);
+      } else {
+        setCallError(response.error || 'Failed to initiate call');
+        setCallState('ready');
       }
-    }, 1000);
+    } catch (error) {
+      console.error('Error starting call:', error);
+      setCallError(error.message || 'Failed to initiate call');
+      setCallState('ready');
+    }
   };
 
-  const endCall = () => {
+  const endCall = async () => {
+    if (twilioCallSid) {
+      try {
+        await callEdgeFunction('twilioEndCall', {
+          callSid: twilioCallSid,
+        });
+      } catch (error) {
+        console.error('Error ending call:', error);
+      }
+    }
+
     setCallState('ended');
     if (timerRef.current) clearInterval(timerRef.current);
   };
@@ -196,8 +246,17 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
         {/* Content */}
         <div className="p-6">
           {callState === 'ready' && (
-            <motion.div className="text-center">
-              <Button 
+            <motion.div className="text-center space-y-4">
+              {callError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+                >
+                  {callError}
+                </motion.div>
+              )}
+              <Button
                 onClick={startCall}
                 className="w-full h-16 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-xl font-semibold rounded-2xl shadow-lg shadow-green-500/30"
               >
@@ -208,6 +267,18 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
           )}
 
           {callState === 'calling' && (
+            <motion.div
+              className="text-center py-8"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <Loader2 className="w-12 h-12 mx-auto text-indigo-600 animate-spin mb-4" />
+              <p className="text-slate-600 font-medium">Connecting call...</p>
+              <p className="text-slate-400 text-sm mt-2">Please wait while we connect</p>
+            </motion.div>
+          )}
+
+          {callState === 'connected' && (
             <motion.div 
               className="flex justify-center gap-4"
               initial={{ opacity: 0 }}
@@ -325,8 +396,36 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
                     ) : (
                       <>
                         <p className="text-slate-700 text-sm leading-relaxed mb-3">{callSummary}</p>
+
+                        {selectedOutcome === 'appointment_set' && calendlyUrl && !showCalendly && (
+                          <Button
+                            onClick={() => setShowCalendly(true)}
+                            className="w-full mb-3 bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            <Calendar className="w-4 h-4 mr-2" />
+                            Book Appointment via Calendly
+                          </Button>
+                        )}
+
+                        {showCalendly && calendlyUrl && (
+                          <div className="mb-3 p-4 bg-slate-50 rounded-xl">
+                            <iframe
+                              src={calendlyUrl}
+                              width="100%"
+                              height="400"
+                              frameBorder="0"
+                              title="Calendly Booking"
+                              className="rounded-lg"
+                            />
+                          </div>
+                        )}
+
                         <Button
-                          onClick={() => onComplete(outcomeOptions.find(o => o.value === selectedOutcome)?.points || 0)}
+                          onClick={() => {
+                            const points = outcomeOptions.find(o => o.value === selectedOutcome)?.points || 0;
+                            onComplete(points);
+                            onClose();
+                          }}
                           className="w-full bg-indigo-600 hover:bg-indigo-700"
                         >
                           Done

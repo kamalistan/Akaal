@@ -23,6 +23,8 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
   const [callSummary, setCallSummary] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -58,78 +60,98 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
   const generateSummary = async (callLogId) => {
     setIsGeneratingSummary(true);
     setShowSummary(true);
-    
-    // Simulate AI processing delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Generate fake summary based on outcome
-    const summaries = {
-      'appointment_set': `Successfully scheduled an appointment with ${lead.name}. Prospect showed strong interest in our solution and agreed to a follow-up meeting. Next steps: Send calendar invite and preparation materials.`,
-      'callback': `${lead.name} requested a callback at a later time. They seem interested but need more time to consider. Follow up within 24-48 hours to maintain momentum.`,
-      'not_interested': `Spoke with ${lead.name} who indicated they're not currently interested in our services. They mentioned budget constraints and timing issues. Consider following up in 3-6 months.`,
-      'no_answer': `No answer on this call attempt. Phone rang but ${lead.name} did not pick up. Recommend trying again at a different time of day, potentially early morning or late afternoon.`,
-      'voicemail': `Left a professional voicemail for ${lead.name} introducing our services. Mentioned key value propositions and requested a callback. Track for response within 48 hours.`,
-      'wrong_number': `Incorrect contact information on file for ${lead.name}. The number reached does not belong to the prospect. Data needs to be updated with correct contact details.`
-    };
-    
-    const summary = summaries[selectedOutcome] || `Call completed with ${lead.name}. Duration: ${Math.floor(duration / 60)}m ${duration % 60}s.`;
-    setCallSummary(summary);
-    setIsGeneratingSummary(false);
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const summaries = {
+        'appointment_set': `Successfully scheduled an appointment with ${lead.name}. Prospect showed strong interest in our solution and agreed to a follow-up meeting. Next steps: Send calendar invite and preparation materials.`,
+        'callback': `${lead.name} requested a callback at a later time. They seem interested but need more time to consider. Follow up within 24-48 hours to maintain momentum.`,
+        'not_interested': `Spoke with ${lead.name} who indicated they're not currently interested in our services. They mentioned budget constraints and timing issues. Consider following up in 3-6 months.`,
+        'no_answer': `No answer on this call attempt. Phone rang but ${lead.name} did not pick up. Recommend trying again at a different time of day, potentially early morning or late afternoon.`,
+        'voicemail': `Left a professional voicemail for ${lead.name} introducing our services. Mentioned key value propositions and requested a callback. Track for response within 48 hours.`,
+        'wrong_number': `Incorrect contact information on file for ${lead.name}. The number reached does not belong to the prospect. Data needs to be updated with correct contact details.`
+      };
+
+      const summary = summaries[selectedOutcome] || `Call completed with ${lead.name}. Duration: ${Math.floor(duration / 60)}m ${duration % 60}s.`;
+      setCallSummary(summary);
+    } finally {
+      setIsGeneratingSummary(false);
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async () => {
-    if (!selectedOutcome) return;
-
-    const outcome = outcomeOptions.find(o => o.value === selectedOutcome);
-
-    const { data: callLog } = await supabase
-      .from('call_logs')
-      .insert({
-        lead_id: lead.id,
-        lead_name: lead.name,
-        duration,
-        outcome: selectedOutcome,
-        points_earned: outcome.points,
-        notes,
-        is_voicemail: selectedOutcome === 'voicemail',
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (callLog?.id) {
-      generateSummary(callLog.id);
+    if (!selectedOutcome) {
+      setSubmitError('Please select a call outcome first');
+      return;
     }
 
-    await supabase
-      .from('leads')
-      .update({
-        status: selectedOutcome === 'appointment_set' ? 'appointment_set' :
-                selectedOutcome === 'not_interested' ? 'not_interested' :
-                selectedOutcome === 'no_answer' ? 'no_answer' : 'contacted',
-        last_called: new Date().toISOString(),
-        call_count: (lead.call_count || 0) + 1,
-        notes: notes ? `${lead.notes || ''}\n[${new Date().toLocaleDateString()}]: ${notes}` : lead.notes
-      })
-      .eq('id', lead.id);
+    setIsSubmitting(true);
+    setSubmitError('');
 
-    if (userStats) {
-      const newStreak = selectedOutcome === 'appointment_set' ?
-        (userStats.current_streak || 0) + 1 : 0;
+    try {
+      const outcome = outcomeOptions.find(o => o.value === selectedOutcome);
 
-      await supabase
-        .from('user_stats')
-        .update({
-          total_points: (userStats.total_points || 0) + outcome.points,
-          calls_today: (userStats.calls_today || 0) + 1,
-          appointments_today: selectedOutcome === 'appointment_set' ?
-            (userStats.appointments_today || 0) + 1 : userStats.appointments_today,
-          current_streak: newStreak,
-          best_streak: Math.max(newStreak, userStats.best_streak || 0),
-          mascot_mood: newStreak >= 3 ? 'excited' :
-                      (userStats.calls_today || 0) + 1 >= 10 ? 'happy' : 'neutral'
+      const { data: callLog, error: callLogError } = await supabase
+        .from('call_logs')
+        .insert({
+          lead_id: lead.id,
+          lead_name: lead.name,
+          duration,
+          outcome: selectedOutcome,
+          points_earned: outcome.points,
+          notes,
+          is_voicemail: selectedOutcome === 'voicemail',
+          created_at: new Date().toISOString(),
         })
-        .eq('id', userStats.id);
+        .select()
+        .single();
+
+      if (callLogError) throw callLogError;
+
+      const { error: leadUpdateError } = await supabase
+        .from('leads')
+        .update({
+          status: selectedOutcome === 'appointment_set' ? 'appointment_set' :
+                  selectedOutcome === 'not_interested' ? 'not_interested' :
+                  selectedOutcome === 'no_answer' ? 'no_answer' : 'contacted',
+          last_called: new Date().toISOString(),
+          call_count: (lead.call_count || 0) + 1,
+          notes: notes ? `${lead.notes || ''}\n[${new Date().toLocaleDateString()}]: ${notes}` : lead.notes
+        })
+        .eq('id', lead.id);
+
+      if (leadUpdateError) throw leadUpdateError;
+
+      if (userStats) {
+        const newStreak = selectedOutcome === 'appointment_set' ?
+          (userStats.current_streak || 0) + 1 : 0;
+
+        const { error: statsUpdateError } = await supabase
+          .from('user_stats')
+          .update({
+            total_points: (userStats.total_points || 0) + outcome.points,
+            calls_today: (userStats.calls_today || 0) + 1,
+            appointments_today: selectedOutcome === 'appointment_set' ?
+              (userStats.appointments_today || 0) + 1 : userStats.appointments_today,
+            current_streak: newStreak,
+            best_streak: Math.max(newStreak, userStats.best_streak || 0),
+            mascot_mood: newStreak >= 3 ? 'excited' :
+                        (userStats.calls_today || 0) + 1 >= 10 ? 'happy' : 'neutral'
+          })
+          .eq('id', userStats.id);
+
+        if (statsUpdateError) throw statsUpdateError;
+      }
+
+      if (callLog?.id) {
+        await generateSummary(callLog.id);
+      }
+    } catch (error) {
+      console.error('Error submitting call:', error);
+      setSubmitError(error.message || 'Failed to save call. Please try again.');
+      setIsSubmitting(false);
     }
   };
 
@@ -248,20 +270,39 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
                 })}
               </div>
 
-              <Textarea 
+              <Textarea
                 placeholder="Add notes about the call..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="rounded-2xl border-slate-200 resize-none h-24"
               />
 
-              <Button 
+              {submitError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+                >
+                  {submitError}
+                </motion.div>
+              )}
+
+              <Button
                 onClick={handleSubmit}
-                disabled={!selectedOutcome || isGeneratingSummary}
+                disabled={!selectedOutcome || isSubmitting || isGeneratingSummary}
                 className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-2xl text-lg font-semibold shadow-lg shadow-indigo-500/30 disabled:opacity-50"
               >
-                Complete & Earn Points
-                <ChevronRight className="w-5 h-5 ml-2" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Complete & Earn Points
+                    <ChevronRight className="w-5 h-5 ml-2" />
+                  </>
+                )}
               </Button>
 
               {/* AI Call Summary */}

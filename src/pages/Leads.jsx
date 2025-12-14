@@ -126,6 +126,9 @@ export default function Leads() {
       setShowAddModal(false);
       setNewLead({ name: '', phone: '', email: '', company: '' });
     },
+    onError: (error) => {
+      alert('Failed to add lead: ' + error.message);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -140,6 +143,9 @@ export default function Leads() {
     onSuccess: () => {
       queryClient.invalidateQueries(['allLeads']);
       queryClient.invalidateQueries(['leads']);
+    },
+    onError: (error) => {
+      alert('Failed to delete lead: ' + error.message);
     },
   });
 
@@ -394,12 +400,15 @@ export default function Leads() {
               onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
               className="h-12 rounded-xl"
             />
+            {(!newLead.name || !newLead.phone) && (
+              <p className="text-red-500 text-sm">* Name and Phone are required</p>
+            )}
             <Button
               onClick={() => createMutation.mutate(newLead)}
-              disabled={!newLead.name || !newLead.phone}
-              className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl"
+              disabled={!newLead.name || !newLead.phone || createMutation.isPending}
+              className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add Lead
+              {createMutation.isPending ? 'Adding...' : 'Add Lead'}
             </Button>
           </div>
         </DialogContent>

@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button';
 export default function AIPerformanceCoach() {
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { data: tipsData, isLoading, refetch } = useQuery({
+  const { data: tipsData, isLoading, error, refetch } = useQuery({
     queryKey: ['performanceTips', refreshKey],
     queryFn: async () => {
       return await callEdgeFunction('generatePerformanceTips', {});
     },
     staleTime: 5 * 60 * 1000,
+    retry: 2,
   });
 
   const handleRefresh = () => {
@@ -59,6 +60,25 @@ export default function AIPerformanceCoach() {
           >
             <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto mb-2" />
             <p className="text-purple-300 text-sm">Analyzing your performance...</p>
+          </motion.div>
+        ) : error ? (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="py-8 text-center"
+          >
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+              <p className="text-red-400 text-sm mb-3">Failed to load performance tips</p>
+              <Button
+                onClick={handleRefresh}
+                size="sm"
+                className="bg-red-500 hover:bg-red-600"
+              >
+                Try Again
+              </Button>
+            </div>
           </motion.div>
         ) : (
           <motion.div

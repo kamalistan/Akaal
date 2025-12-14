@@ -13,8 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const pipelineId = url.searchParams.get('pipelineId');
+    const { pipelineId } = await req.json();
 
     if (!pipelineId) {
       return new Response(

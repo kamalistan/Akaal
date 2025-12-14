@@ -98,7 +98,11 @@ export default function Home() {
         .eq('status', 'new');
 
       if (selectedPipeline !== 'all') {
-        query = query.eq('pipeline_id', selectedPipeline);
+        if (selectedPipeline === 'none') {
+          query = query.is('pipeline_id', null);
+        } else {
+          query = query.eq('pipeline_id', selectedPipeline);
+        }
       }
 
       const { data, error } = await query
@@ -125,12 +129,30 @@ export default function Home() {
     },
   });
 
-  const startDialing = () => {
-    if (leads.length > 0) {
-      const randomLead = leads[Math.floor(Math.random() * leads.length)];
-      setCurrentLead(randomLead);
+  const startDialing = (lead) => {
+    if (lead) {
+      setCurrentLead(lead);
+      setShowDialer(true);
+    } else if (leads.length > 0) {
+      setCurrentLead(leads[0]);
       setShowDialer(true);
     }
+  };
+
+  const skipToNextLead = () => {
+    if (!currentLead || leads.length <= 1) return;
+
+    const currentIndex = leads.findIndex(l => l.id === currentLead.id);
+    const nextIndex = (currentIndex + 1) % leads.length;
+    setCurrentLead(leads[nextIndex]);
+  };
+
+  const skipToPrevLead = () => {
+    if (!currentLead || leads.length <= 1) return;
+
+    const currentIndex = leads.findIndex(l => l.id === currentLead.id);
+    const prevIndex = currentIndex === 0 ? leads.length - 1 : currentIndex - 1;
+    setCurrentLead(leads[prevIndex]);
   };
 
   const handleCallComplete = (points) => {
@@ -178,9 +200,10 @@ export default function Home() {
               <select
                 value={selectedPipeline}
                 onChange={(e) => setSelectedPipeline(e.target.value)}
-                className="px-4 py-2 bg-[#2d1f4a]/80 backdrop-blur-sm border border-purple-500/20 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className={`px-4 py-2 ${theme.cardBg} backdrop-blur-sm border ${theme.borderColor} rounded-xl ${theme.textPrimary} text-sm focus:outline-none focus:ring-2 focus:ring-${theme.accentColor}-500`}
               >
                 <option value="all">All Leads</option>
+                <option value="none">No Pipeline</option>
                 {pipelines.map(pipeline => (
                   <option key={pipeline.id} value={pipeline.id}>
                     {pipeline.name}
@@ -198,7 +221,7 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <div className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-2xl p-4 border border-emerald-500/20">
+          <div className={`${theme.cardBg} backdrop-blur-sm rounded-2xl p-4 border border-emerald-500/20`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-emerald-300 text-sm">Appointments</span>
               <PhoneCall className="w-4 h-4 text-emerald-400" />
@@ -241,9 +264,9 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left column - Lead Card */}
           <div className="lg:col-span-2">
-            <LeadCard 
-              lead={leads[0]} 
-              onStartCall={startDialing}
+            <LeadCard
+              lead={leads[0]}
+              onStartCall={() => startDialing(leads[0])}
               xpMultiplier={userStats?.current_streak >= 3 ? 2 : 1}
             />
 
@@ -286,6 +309,10 @@ export default function Home() {
             userStats={userStats}
             onClose={() => setShowDialer(false)}
             onComplete={handleCallComplete}
+            onNext={skipToNextLead}
+            onPrev={skipToPrevLead}
+            hasNext={leads.length > 1}
+            hasPrev={leads.length > 1}
           />
         )}
       </AnimatePresence>

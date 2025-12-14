@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, Pause, Play, Sparkles, Loader2 } from 'lucide-react';
+import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Pause, Play, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase, callEdgeFunction } from '@/lib/supabase';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const outcomeOptions = [
   { value: 'appointment_set', label: 'Appointment Set', icon: Calendar, points: 100, color: 'bg-emerald-500' },
@@ -14,7 +15,8 @@ const outcomeOptions = [
   { value: 'wrong_number', label: 'Wrong Number', icon: X, points: 2, color: 'bg-red-500' },
 ];
 
-export default function DialerModal({ lead, onClose, onComplete, userStats }) {
+export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev, hasNext, hasPrev, userStats }) {
+  const { theme, currentTheme } = useTheme();
   const [callState, setCallState] = useState('ready'); // ready, calling, connected, ended
   const [duration, setDuration] = useState(0);
   const [selectedOutcome, setSelectedOutcome] = useState(null);
@@ -64,6 +66,15 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
 
       if (response.success) {
         setTwilioCallSid(response.callSid);
+        setCallState('connected');
+
+        timerRef.current = setInterval(() => {
+          if (!isPaused) {
+            setDuration(d => d + 1);
+          }
+        }, 1000);
+      } else if (response.needsSetup) {
+        setCallError('⚠️ ' + response.error + ' The dialer will work in demo mode for now.');
         setCallState('connected');
 
         timerRef.current = setInterval(() => {
@@ -211,16 +222,68 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <motion.div 
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
+      <motion.div
+        className={`rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden ${
+          currentTheme === 'christmas' ? 'bg-white relative' : 'bg-white'
+        }`}
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
       >
+        {/* Christmas decorations */}
+        {currentTheme === 'christmas' && (
+          <>
+            {/* Candy cane stripe border */}
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-white via-50% to-red-500 z-10" style={{
+              backgroundImage: 'repeating-linear-gradient(45deg, #ef4444 0, #ef4444 10px, white 10px, white 20px)',
+            }} />
+            <div className="absolute bottom-0 left-0 w-full h-2 bg-gradient-to-r from-green-500 via-white via-50% to-green-500 z-10" style={{
+              backgroundImage: 'repeating-linear-gradient(-45deg, #22c55e 0, #22c55e 10px, white 10px, white 20px)',
+            }} />
+
+            {/* Santa and decorations */}
+            <div className="absolute top-6 left-6 text-4xl z-20 animate-bounce" style={{
+              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+            }}>🎅</div>
+            <div className="absolute top-6 right-20 text-3xl z-20 animate-pulse">❄️</div>
+            <div className="absolute top-16 right-6 text-2xl z-20 animate-bounce" style={{animationDelay: '0.5s'}}>🎄</div>
+            <div className="absolute bottom-6 left-6 text-2xl z-20">🎁</div>
+            <div className="absolute bottom-6 right-6 text-2xl z-20 animate-pulse" style={{animationDelay: '0.3s'}}>⭐</div>
+          </>
+        )}
+
         {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white relative">
-          <button 
+        <div className={`p-6 text-white relative ${
+          currentTheme === 'christmas'
+            ? 'bg-gradient-to-r from-red-600 via-green-600 to-red-600'
+            : currentTheme === 'dark'
+            ? 'bg-gradient-to-r from-slate-700 to-zinc-800'
+            : 'bg-gradient-to-r from-indigo-600 to-purple-600'
+        }`}>
+          {/* Navigation arrows */}
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 flex gap-2 z-30">
+            {hasPrev && (
+              <button
+                onClick={onPrev}
+                disabled={callState !== 'ready'}
+                className="p-2 hover:bg-white/20 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+            {hasNext && (
+              <button
+                onClick={onNext}
+                disabled={callState !== 'ready'}
+                className="p-2 hover:bg-white/20 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-full transition-all"
+            className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-full transition-all z-30"
           >
             <X className="w-5 h-5" />
           </button>
@@ -258,10 +321,14 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
               )}
               <Button
                 onClick={startCall}
-                className="w-full h-16 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-xl font-semibold rounded-2xl shadow-lg shadow-green-500/30"
+                className={`w-full h-16 text-xl font-semibold rounded-2xl shadow-lg ${
+                  currentTheme === 'christmas'
+                    ? 'bg-gradient-to-r from-red-600 to-green-600 hover:from-red-700 hover:to-green-700 shadow-red-500/30'
+                    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30'
+                }`}
               >
                 <Phone className="w-6 h-6 mr-3" />
-                Start Call
+                Start Call {currentTheme === 'christmas' && '🎄'}
               </Button>
             </motion.div>
           )}
@@ -291,9 +358,13 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
               >
                 {isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
               </Button>
-              <Button 
+              <Button
                 onClick={endCall}
-                className="h-14 px-8 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 rounded-2xl shadow-lg shadow-red-500/30"
+                className={`h-14 px-8 bg-gradient-to-r rounded-2xl shadow-lg ${
+                  currentTheme === 'christmas'
+                    ? 'from-red-700 to-rose-800 hover:from-red-800 hover:to-rose-900 shadow-red-600/30'
+                    : 'from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-red-500/30'
+                }`}
               >
                 <PhoneOff className="w-5 h-5 mr-2" />
                 End Call
@@ -360,7 +431,13 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
               <Button
                 onClick={handleSubmit}
                 disabled={!selectedOutcome || isSubmitting || isGeneratingSummary}
-                className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-2xl text-lg font-semibold shadow-lg shadow-indigo-500/30 disabled:opacity-50"
+                className={`w-full h-14 bg-gradient-to-r rounded-2xl text-lg font-semibold shadow-lg disabled:opacity-50 ${
+                  currentTheme === 'christmas'
+                    ? 'from-red-600 to-green-600 hover:from-red-700 hover:to-green-700 shadow-red-500/30'
+                    : currentTheme === 'dark'
+                    ? 'from-slate-700 to-zinc-800 hover:from-slate-800 hover:to-zinc-900 shadow-slate-500/30'
+                    : 'from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-500/30'
+                }`}
               >
                 {isSubmitting ? (
                   <>
@@ -369,7 +446,7 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
                   </>
                 ) : (
                   <>
-                    Complete & Earn Points
+                    Complete & Earn Points {currentTheme === 'christmas' && '🎁'}
                     <ChevronRight className="w-5 h-5 ml-2" />
                   </>
                 )}

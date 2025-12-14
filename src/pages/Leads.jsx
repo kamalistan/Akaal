@@ -155,7 +155,7 @@ export default function Leads() {
     },
   });
 
-  const { data: ghlData, isLoading: ghlLoading } = useQuery({
+  const { data: ghlData, isLoading: ghlLoading, error: ghlError } = useQuery({
     queryKey: ['ghlPipelines'],
     queryFn: async () => {
       return await callEdgeFunction('ghlGetPipelines', {});
@@ -163,13 +163,8 @@ export default function Leads() {
     enabled: showGHLModal,
   });
 
-  const { data: stagesData, isLoading: stagesLoading } = useQuery({
-    queryKey: ['ghlStages', selectedPipeline],
-    queryFn: async () => {
-      return await callEdgeFunction('ghlGetPipelineStages', { pipelineId: selectedPipeline });
-    },
-    enabled: !!selectedPipeline,
-  });
+  const selectedPipelineData = ghlData?.pipelines?.find(p => p.id === selectedPipeline);
+  const stagesData = selectedPipelineData ? { stages: selectedPipelineData.stages || [] } : null;
 
   const handleGHLImport = async () => {
     if (!selectedPipeline || !selectedStage || !ghlData?.locationId) return;
@@ -498,11 +493,7 @@ export default function Leads() {
                     <label className="text-sm font-medium text-slate-700 mb-2 block">
                       Select Stage
                     </label>
-                    {stagesLoading ? (
-                      <div className="w-full h-12 rounded-xl border border-slate-200 px-4 bg-white flex items-center text-slate-500">
-                        Loading stages...
-                      </div>
-                    ) : stagesData?.stages ? (
+                    {stagesData?.stages && stagesData.stages.length > 0 ? (
                       <select
                         value={selectedStage}
                         onChange={(e) => setSelectedStage(e.target.value)}
@@ -516,8 +507,8 @@ export default function Leads() {
                         ))}
                       </select>
                     ) : (
-                      <div className="w-full h-12 rounded-xl border border-red-200 px-4 bg-red-50 flex items-center text-red-500">
-                        Failed to load stages
+                      <div className="w-full h-12 rounded-xl border border-amber-200 px-4 bg-amber-50 flex items-center text-amber-700">
+                        No stages found for this pipeline
                       </div>
                     )}
                   </div>
@@ -531,8 +522,13 @@ export default function Leads() {
                 </Button>
               </>
             ) : (
-              <div className="py-8 text-center">
-                <p className="text-red-500">Failed to load pipelines. Check your API key.</p>
+              <div className="py-8 text-center space-y-2">
+                <p className="text-red-500 font-medium">Failed to load pipelines from GoHighLevel</p>
+                {ghlError && (
+                  <p className="text-sm text-slate-500">
+                    {ghlError.message || 'Please check your GHL API credentials'}
+                  </p>
+                )}
               </div>
             )}
           </div>

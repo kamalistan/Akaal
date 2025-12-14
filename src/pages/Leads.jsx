@@ -183,7 +183,22 @@ export default function Leads() {
       setSelectedPipeline('');
       setSelectedStage('');
 
-      const message = `Import Complete!\n\nNew Leads: ${response.imported}\nUpdated: ${response.updated}\nSkipped: ${response.skipped}\nTotal Processed: ${response.total}`;
+      let message = `Import Complete!\n\n`;
+      message += `Total Opportunities Found: ${response.total}\n`;
+      message += `Pages Fetched: ${response.pages}\n\n`;
+      message += `✓ New Leads Imported: ${response.imported}\n`;
+      message += `✓ Existing Leads Updated: ${response.updated}\n`;
+
+      if (response.skipped > 0) {
+        message += `\n⚠ Skipped: ${response.skipped}\n`;
+        if (response.skipReasons) {
+          message += `\nSkip Reasons:\n`;
+          Object.entries(response.skipReasons).forEach(([reason, count]) => {
+            message += `  • ${reason}: ${count}\n`;
+          });
+        }
+      }
+
       alert(message);
     } catch (error) {
       alert('Failed to import leads: ' + error.message);
@@ -518,7 +533,7 @@ export default function Leads() {
                   disabled={!selectedPipeline || !selectedStage || isImporting}
                   className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isImporting ? 'Importing...' : 'Import Leads'}
+                  {isImporting ? 'Importing All Leads...' : 'Import Leads'}
                 </Button>
               </>
             ) : (

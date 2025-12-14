@@ -48,41 +48,62 @@ Deno.serve(async (req: Request) => {
         status: 'in_progress',
       });
 
-    const searchParams = new URLSearchParams({
-      location_id: locationId,
-      pipeline_id: pipelineId,
-    });
-
     const stagesToFilter = pipelineStageIds || (stageId ? [stageId] : []);
-
-    if (stagesToFilter && stagesToFilter.length > 0) {
-      stagesToFilter.forEach((stage: string) => {
-        searchParams.append('pipeline_stage_id', stage);
-      });
-    }
-
-    const opportunitiesResponse = await fetch(
-      `https://services.leadconnectorhq.com/opportunities/search?${searchParams.toString()}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${ghlApiKey}`,
-          'Version': '2021-07-28',
-          'Accept': 'application/json',
-        },
-      }
-    );
-
-    if (!opportunitiesResponse.ok) {
-      const errorText = await opportunitiesResponse.text();
-      throw new Error(`Failed to fetch opportunities: ${opportunitiesResponse.status} - ${errorText}`);
-    }
-
-    const opportunitiesData = await opportunitiesResponse.json();
-    const opportunities = opportunitiesData.opportunities || [];
 
     let imported = 0;
     let updated = 0;
     let skipped = 0;
+    let skipReasons: Record<string, number> = {};
+    let totalOpportunities = 0;
+    let currentPage = 1;
+    let hasMorePages = true;
+    let startAfterId: string | null = null;
+
+    while (hasMorePages) {
+      const searchParams = new URLSearchParams({
+        location_id: locationId,
+        pipeline_id: pipelineId,
+        limit: '100',
+      });
+
+      if (stagesToFilter && stagesToFilter.length > 0) {
+        stagesToFilter.forEach((stage: string) => {
+          searchParams.append('pipeline_stage_id', stage);
+        });
+      }
+
+      if (startAfterId) {
+        searchParams.append('startAfterId', startAfterId);
+      }
+
+      console.log(`Fetching page ${currentPage} of opportunities...`);
+
+      const opportunitiesResponse = await fetch(
+        `https://services.leadconnectorhq.com/opportunities/search?${searchParams.toString()}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${ghlApiKey}`,
+            'Version': '2021-07-28',
+            'Accept': 'application/json',
+          },
+        }
+      );
+
+      if (!opportunitiesResponse.ok) {
+        const errorText = await opportunitiesResponse.text();
+        throw new Error(`Failed to fetch opportunities: ${opportunitiesResponse.status} - ${errorText}`);
+      }
+
+      const opportunitiesData = await opportunitiesResponse.json();
+      const opportunities = opportunitiesData.opportunities || [];
+
+      if (opportunities.length === 0) {
+        hasMorePages = false;
+        break;
+      }
+
+      totalOpportunities += opportunities.length;
+      console.log(`Processing ${opportunities.length} opportunities from page ${currentPage}...`);
 
     for (const opp of opportunities) {
       let contactData = null;
@@ -119,49 +140,71 @@ Deno.serve(async (req: Request) => {
 
       if (!contactPhone && !contactEmail) {
         skipped++;
+        const reason = 'No phone or email';
+        skipReasons[reason] = (skipReasons[reason] || 0) + 1;
+        console.log(`Skipped opportunity ${opp.id}: ${reason}`);
         continue;
       }
 
-      const { data: existing } = await supabase
-        .from('leads')
-        .select('id, ghl_opportunity_id')
-        .or(`ghl_opportunity_id.eq.${opp.id},phone.eq.${contactPhone}`)
-        .maybeSingle();
-
-      const leadData = {
-        name: contactName,
-        phone: contactPhone,
-        email: contactEmail,
-        company: companyName,
-        ghl_contact_id: opp.contact?.id || null,
-        ghl_opportunity_id: opp.id,
-        pipeline_id: pipelineData.id,
-        pipeline_stage_id: opp.pipelineStageId || null,
-        opportunity_value: opp.monetaryValue || 0,
-        opportunity_status: opp.status || 'open',
-        source: opp.source || null,
-        tags: contactData?.tags || [],
-        assigned_user_id: opp.assignedTo || null,
-        custom_fields: contactData?.customField || {},
-        notes: opp.notes || null,
-        last_synced_at: new Date().toISOString(),
-        status: mapOpportunityStatusToLeadStatus(opp.status),
-      };
-
-      if (existing) {
-        await supabase
+      try {
+        const { data: existing } = await supabase
           .from('leads')
-          .update(leadData)
-          .eq('id', existing.id);
-        updated++;
+          .select('id, ghl_opportunity_id')
+          .or(`ghl_opportunity_id.eq.${opp.id},phone.eq.${contactPhone}`)
+          .maybeSingle();
+
+        const leadData = {
+          name: contactName,
+          phone: contactPhone,
+          email: contactEmail,
+          company: companyName,
+          ghl_contact_id: opp.contact?.id || null,
+          ghl_opportunity_id: opp.id,
+          pipeline_id: pipelineData.id,
+          pipeline_stage_id: opp.pipelineStageId || null,
+          opportunity_value: opp.monetaryValue || 0,
+          opportunity_status: opp.status || 'open',
+          source: opp.source || null,
+          tags: contactData?.tags || [],
+          assigned_user_id: opp.assignedTo || null,
+          custom_fields: contactData?.customField || {},
+          notes: opp.notes || null,
+          last_synced_at: new Date().toISOString(),
+          status: mapOpportunityStatusToLeadStatus(opp.status),
+        };
+
+        if (existing) {
+          const { error } = await supabase
+            .from('leads')
+            .update(leadData)
+            .eq('id', existing.id);
+
+          if (error) throw error;
+          updated++;
+        } else {
+          const { error } = await supabase
+            .from('leads')
+            .insert({
+              ...leadData,
+              call_count: 0,
+            });
+
+          if (error) throw error;
+          imported++;
+        }
+      } catch (error) {
+        skipped++;
+        const reason = 'Database error';
+        skipReasons[reason] = (skipReasons[reason] || 0) + 1;
+        console.error(`Failed to save lead ${opp.id}:`, error);
+      }
+    }
+
+      if (opportunities.length < 100) {
+        hasMorePages = false;
       } else {
-        await supabase
-          .from('leads')
-          .insert({
-            ...leadData,
-            call_count: 0,
-          });
-        imported++;
+        startAfterId = opportunities[opportunities.length - 1].id;
+        currentPage++;
       }
     }
 
@@ -169,16 +212,26 @@ Deno.serve(async (req: Request) => {
       .from('ghl_sync_log')
       .update({
         status: 'completed',
-        records_processed: opportunities.length,
+        records_processed: totalOpportunities,
         records_imported: imported,
         records_updated: updated,
         records_skipped: skipped,
         completed_at: new Date().toISOString(),
+        error_details: skipReasons,
       })
       .eq('id', syncLogId);
 
+    console.log(`Import completed: ${imported} imported, ${updated} updated, ${skipped} skipped out of ${totalOpportunities} total opportunities`);
+
     return new Response(
-      JSON.stringify({ imported, updated, skipped, total: opportunities.length }),
+      JSON.stringify({
+        imported,
+        updated,
+        skipped,
+        total: totalOpportunities,
+        skipReasons,
+        pages: currentPage,
+      }),
       {
         headers: {
           ...corsHeaders,

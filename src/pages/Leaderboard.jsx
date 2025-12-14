@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { Trophy, Flame, Phone, CalendarCheck, TrendingUp, Users, Target, Award } from 'lucide-react';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
@@ -17,7 +17,7 @@ export default function Leaderboard() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const user = await base44.auth.me();
+      const user = { email: 'demo@example.com' };
       setCurrentUser(user);
     };
     loadUser();
@@ -27,29 +27,50 @@ export default function Leaderboard() {
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      if (stats.length === 0) {
-        const newStats = await base44.entities.UserStats.create({
-          user_email: currentUser.email,
-          total_points: 0,
-          level: 1,
-          calls_today: 0,
-          appointments_today: 0,
-          current_streak: 0,
-          best_streak: 0,
-          daily_goal: 50,
-          mascot_mood: 'neutral'
-        });
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select()
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (!stats) {
+        const { data: newStats, error: createError } = await supabase
+          .from('user_stats')
+          .insert({
+            user_email: currentUser.email,
+            total_points: 0,
+            level: 1,
+            calls_today: 0,
+            appointments_today: 0,
+            current_streak: 0,
+            best_streak: 0,
+            daily_goal: 50,
+            mascot_mood: 'neutral'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
         return newStats;
       }
-      return stats[0];
+      return stats;
     },
     enabled: !!currentUser?.email,
   });
 
   const { data: allStats = [] } = useQuery({
     queryKey: ['leaderboard'],
-    queryFn: () => base44.entities.UserStats.list('-total_points'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_stats')
+        .select()
+        .order('total_points', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const topThree = allStats.slice(0, 3);

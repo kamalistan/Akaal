@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { callEdgeFunction } from '@/lib/supabase';
 import { Sparkles, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -11,10 +11,9 @@ export default function AIPerformanceCoach() {
   const { data: tipsData, isLoading, refetch } = useQuery({
     queryKey: ['performanceTips', refreshKey],
     queryFn: async () => {
-      const response = await base44.functions.invoke('generatePerformanceTips', {});
-      return response.data;
+      return await callEdgeFunction('generatePerformanceTips', {});
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   const handleRefresh = () => {

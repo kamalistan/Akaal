@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 import { Trophy, Star, Zap, Target, Award, Medal, Phone, Flame, Swords, Crown, CalendarCheck, Rocket, Gem, Shield, TrendingUp } from 'lucide-react';
@@ -24,7 +24,7 @@ export default function Achievements() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const user = await base44.auth.me();
+      const user = { email: 'demo@example.com' };
       setCurrentUser(user);
     };
     loadUser();
@@ -34,8 +34,14 @@ export default function Achievements() {
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      return stats[0] || null;
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select()
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error) throw error;
+      return stats || null;
     },
     enabled: !!currentUser?.email,
   });

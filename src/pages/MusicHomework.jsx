@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { Button } from "@/components/ui/button";
 import { Plus, BookOpen, Video, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -20,11 +20,26 @@ export default function MusicHomework() {
 
   const { data: assignments = [], isLoading } = useQuery({
     queryKey: ['assignments'],
-    queryFn: () => base44.entities.Assignment.list('-due_date'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assignments')
+        .select()
+        .order('due_date', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Assignment.delete(id),
+    mutationFn: async (id) => {
+      const { error } = await supabase
+        .from('assignments')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['assignments']);
     },

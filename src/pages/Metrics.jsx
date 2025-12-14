@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 import MetricCard from '@/components/metrics/MetricCard';
@@ -18,7 +18,7 @@ export default function Metrics() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const user = await base44.auth.me();
+      const user = { email: 'demo@example.com' };
       setCurrentUser(user);
     };
     loadUser();
@@ -28,15 +28,30 @@ export default function Metrics() {
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      return stats[0] || null;
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select()
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error) throw error;
+      return stats || null;
     },
     enabled: !!currentUser?.email,
   });
 
   const { data: allCallLogs = [] } = useQuery({
     queryKey: ['allCallLogs'],
-    queryFn: () => base44.entities.CallLog.list('-created_date', 1000),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('call_logs')
+        .select()
+        .order('created_date', { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   // Filter logs based on selected range

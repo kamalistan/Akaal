@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 import LeadCard from '@/components/dialer/LeadCard';
@@ -22,7 +22,7 @@ export default function Home() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const user = await base44.auth.me();
+      const user = { email: 'demo@example.com' };
       setCurrentUser(user);
     };
     loadUser();
@@ -33,22 +33,35 @@ export default function Home() {
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      if (stats.length === 0) {
-        const newStats = await base44.entities.UserStats.create({
-          user_email: currentUser.email,
-          total_points: 0,
-          level: 1,
-          calls_today: 0,
-          appointments_today: 0,
-          current_streak: 0,
-          best_streak: 0,
-          daily_goal: 50,
-          mascot_mood: 'neutral'
-        });
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select()
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (!stats) {
+        const { data: newStats, error: createError } = await supabase
+          .from('user_stats')
+          .insert({
+            user_email: currentUser.email,
+            total_points: 0,
+            level: 1,
+            calls_today: 0,
+            appointments_today: 0,
+            current_streak: 0,
+            best_streak: 0,
+            daily_goal: 50,
+            mascot_mood: 'neutral'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
         return newStats;
       }
-      return stats[0];
+      return stats;
     },
     enabled: !!currentUser?.email,
   });
@@ -56,7 +69,17 @@ export default function Home() {
   // Get available leads
   const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
-    queryFn: () => base44.entities.Lead.filter({ status: 'new' }, '-created_date', 100),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('leads')
+        .select()
+        .eq('status', 'new')
+        .order('created_date', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const startDialing = () => {

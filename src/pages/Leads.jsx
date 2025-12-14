@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase, callEdgeFunction } from '@/lib/supabase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -52,45 +52,74 @@ export default function Leads() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const loadUser = async () => {
-      const user = await base44.auth.me();
-      setCurrentUser(user);
-    };
-    loadUser();
+    setCurrentUser({ email: 'demo@example.com' });
   }, []);
 
-  // Get or create user stats
   const { data: userStats } = useQuery({
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      if (stats.length === 0) {
-        const newStats = await base44.entities.UserStats.create({
-          user_email: currentUser.email,
-          total_points: 0,
-          level: 1,
-          calls_today: 0,
-          appointments_today: 0,
-          current_streak: 0,
-          best_streak: 0,
-          daily_goal: 50,
-          mascot_mood: 'neutral'
-        });
+
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select('*')
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (!stats) {
+        const { data: newStats, error: createError } = await supabase
+          .from('user_stats')
+          .insert({
+            user_email: currentUser.email,
+            total_points: 0,
+            level: 1,
+            calls_today: 0,
+            appointments_today: 0,
+            current_streak: 0,
+            best_streak: 0,
+            daily_goal: 50,
+            mascot_mood: 'neutral'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
         return newStats;
       }
-      return stats[0];
+
+      return stats;
     },
     enabled: !!currentUser?.email,
   });
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ['allLeads'],
-    queryFn: () => base44.entities.Lead.list('-created_date'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('*')
+        .order('created_date', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Lead.create(data),
+    mutationFn: async (data) => {
+      const { error } = await supabase
+        .from('leads')
+        .insert({
+          ...data,
+          status: 'new',
+          call_count: 0,
+          created_date: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['allLeads']);
       queryClient.invalidateQueries(['leads']);
@@ -100,7 +129,14 @@ export default function Leads() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Lead.delete(id),
+    mutationFn: async (id) => {
+      const { error } = await supabase
+        .from('leads')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['allLeads']);
       queryClient.invalidateQueries(['leads']);
@@ -110,28 +146,27 @@ export default function Leads() {
   const { data: ghlData, isLoading: ghlLoading } = useQuery({
     queryKey: ['ghlPipelines'],
     queryFn: async () => {
-      const response = await base44.functions.invoke('ghlGetPipelines', {});
-      return response.data;
+      return await callEdgeFunction('ghlGetPipelines', {});
     },
     enabled: showGHLModal,
   });
 
   const handleGHLImport = async () => {
     if (!selectedPipeline || !ghlData?.locationId) return;
-    
+
     setIsImporting(true);
     try {
-      const response = await base44.functions.invoke('ghlImportLeads', {
+      const response = await callEdgeFunction('ghlImportLeads', {
         pipelineId: selectedPipeline,
         locationId: ghlData.locationId
       });
-      
+
       queryClient.invalidateQueries(['allLeads']);
       queryClient.invalidateQueries(['leads']);
       setShowGHLModal(false);
       setSelectedPipeline('');
-      
-      alert(`Successfully imported ${response.data.imported} leads (${response.data.skipped} duplicates skipped)`);
+
+      alert(`Successfully imported ${response.imported} leads (${response.skipped} duplicates skipped)`);
     } catch (error) {
       alert('Failed to import leads: ' + error.message);
     } finally {
@@ -149,9 +184,14 @@ export default function Leads() {
       { name: 'Lisa Anderson', phone: '+1 (555) 678-9012', email: 'lisa@primeco.com', company: 'Prime Consulting' },
       { name: 'James Taylor', phone: '+1 (555) 789-0123', email: 'james@alphainc.com', company: 'Alpha Industries' },
       { name: 'Jennifer Martinez', phone: '+1 (555) 890-1234', email: 'jennifer@betasoft.com', company: 'BetaSoft' },
-    ];
-    
-    await base44.entities.Lead.bulkCreate(sampleLeads);
+    ].map(lead => ({
+      ...lead,
+      status: 'new',
+      call_count: 0,
+      created_date: new Date().toISOString(),
+    }));
+
+    await supabase.from('leads').insert(sampleLeads);
     queryClient.invalidateQueries(['allLeads']);
     queryClient.invalidateQueries(['leads']);
   };

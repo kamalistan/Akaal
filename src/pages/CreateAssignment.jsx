@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +27,16 @@ export default function CreateAssignment() {
   const [newReading, setNewReading] = useState('');
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Assignment.create(data),
+    mutationFn: async (data) => {
+      const { data: newAssignment, error } = await supabase
+        .from('assignments')
+        .insert(data)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return newAssignment;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['assignments']);
       navigate(createPageUrl('MusicHomework'));

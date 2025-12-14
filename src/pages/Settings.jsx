@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ export default function Settings() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const user = await base44.auth.me();
+      const user = { email: 'demo@example.com' };
       setCurrentUser(user);
     };
     loadUser();
@@ -25,14 +25,21 @@ export default function Settings() {
     queryKey: ['userStats', currentUser?.email],
     queryFn: async () => {
       if (!currentUser?.email) return null;
-      const stats = await base44.entities.UserStats.filter({ user_email: currentUser.email });
-      return stats[0] || null;
+      const { data: stats, error } = await supabase
+        .from('user_stats')
+        .select()
+        .eq('user_email', currentUser.email)
+        .maybeSingle();
+
+      if (error) throw error;
+      return stats || null;
     },
     enabled: !!currentUser?.email,
   });
 
   const handleLogout = () => {
-    base44.auth.logout();
+    // Mock logout - redirect or clear session as needed
+    window.location.href = '/';
   };
 
   return (

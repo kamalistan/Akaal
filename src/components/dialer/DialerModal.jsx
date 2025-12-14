@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, Pause, Play, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 
 const outcomeOptions = [
   { value: 'appointment_set', label: 'Appointment Set', icon: Calendar, points: 100, color: 'bg-emerald-500' },
@@ -79,50 +79,57 @@ export default function DialerModal({ lead, onClose, onComplete, userStats }) {
 
   const handleSubmit = async () => {
     if (!selectedOutcome) return;
-    
-    const outcome = outcomeOptions.find(o => o.value === selectedOutcome);
-    
-    // Create call log
-    const callLog = await base44.entities.CallLog.create({
-      lead_id: lead.id,
-      lead_name: lead.name,
-      duration,
-      outcome: selectedOutcome,
-      points_earned: outcome.points,
-      notes,
-      is_voicemail: selectedOutcome === 'voicemail'
-    });
 
-    // Generate AI summary
+    const outcome = outcomeOptions.find(o => o.value === selectedOutcome);
+
+    const { data: callLog } = await supabase
+      .from('call_logs')
+      .insert({
+        lead_id: lead.id,
+        lead_name: lead.name,
+        duration,
+        outcome: selectedOutcome,
+        points_earned: outcome.points,
+        notes,
+        is_voicemail: selectedOutcome === 'voicemail',
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
     if (callLog?.id) {
       generateSummary(callLog.id);
     }
 
-    // Update lead
-    await base44.entities.Lead.update(lead.id, {
-      status: selectedOutcome === 'appointment_set' ? 'appointment_set' : 
-              selectedOutcome === 'not_interested' ? 'not_interested' :
-              selectedOutcome === 'no_answer' ? 'no_answer' : 'contacted',
-      last_called: new Date().toISOString(),
-      call_count: (lead.call_count || 0) + 1,
-      notes: notes ? `${lead.notes || ''}\n[${new Date().toLocaleDateString()}]: ${notes}` : lead.notes
-    });
+    await supabase
+      .from('leads')
+      .update({
+        status: selectedOutcome === 'appointment_set' ? 'appointment_set' :
+                selectedOutcome === 'not_interested' ? 'not_interested' :
+                selectedOutcome === 'no_answer' ? 'no_answer' : 'contacted',
+        last_called: new Date().toISOString(),
+        call_count: (lead.call_count || 0) + 1,
+        notes: notes ? `${lead.notes || ''}\n[${new Date().toLocaleDateString()}]: ${notes}` : lead.notes
+      })
+      .eq('id', lead.id);
 
-    // Update user stats
     if (userStats) {
-      const newStreak = selectedOutcome === 'appointment_set' ? 
+      const newStreak = selectedOutcome === 'appointment_set' ?
         (userStats.current_streak || 0) + 1 : 0;
-      
-      await base44.entities.UserStats.update(userStats.id, {
-        total_points: (userStats.total_points || 0) + outcome.points,
-        calls_today: (userStats.calls_today || 0) + 1,
-        appointments_today: selectedOutcome === 'appointment_set' ? 
-          (userStats.appointments_today || 0) + 1 : userStats.appointments_today,
-        current_streak: newStreak,
-        best_streak: Math.max(newStreak, userStats.best_streak || 0),
-        mascot_mood: newStreak >= 3 ? 'excited' : 
-                    (userStats.calls_today || 0) + 1 >= 10 ? 'happy' : 'neutral'
-      });
+
+      await supabase
+        .from('user_stats')
+        .update({
+          total_points: (userStats.total_points || 0) + outcome.points,
+          calls_today: (userStats.calls_today || 0) + 1,
+          appointments_today: selectedOutcome === 'appointment_set' ?
+            (userStats.appointments_today || 0) + 1 : userStats.appointments_today,
+          current_streak: newStreak,
+          best_streak: Math.max(newStreak, userStats.best_streak || 0),
+          mascot_mood: newStreak >= 3 ? 'excited' :
+                      (userStats.calls_today || 0) + 1 >= 10 ? 'happy' : 'neutral'
+        })
+        .eq('id', userStats.id);
     }
   };
 

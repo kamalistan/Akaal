@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase, callEdgeFunction } from '@/lib/supabase';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Sparkles, Copy, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -23,14 +23,27 @@ export default function GenerateHomework() {
   const { data: assignment } = useQuery({
     queryKey: ['assignment', assignmentId],
     queryFn: async () => {
-      const assignments = await base44.entities.Assignment.filter({ id: assignmentId });
-      return assignments[0];
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('id', assignmentId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
     },
     enabled: !!assignmentId,
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Assignment.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      const { error } = await supabase
+        .from('assignments')
+        .update(data)
+        .eq('id', id);
+
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['assignment', assignmentId]);
       queryClient.invalidateQueries(['assignments']);
@@ -39,24 +52,23 @@ export default function GenerateHomework() {
 
   const handleGenerate = async () => {
     if (!assignment) return;
-    
+
     setIsGenerating(true);
     try {
-      const response = await base44.functions.invoke('generateHomework', {
+      const response = await callEdgeFunction('generateHomework', {
         assignmentType: assignment.type,
         template: assignment.template,
         youtubeVideos: assignment.youtube_videos,
         readings: assignment.readings,
       });
 
-      if (response.data.success) {
-        setGeneratedOutput(response.data.output);
-        
-        // Save to assignment
+      if (response.success) {
+        setGeneratedOutput(response.output);
+
         await updateMutation.mutateAsync({
           id: assignment.id,
           data: {
-            generated_output: response.data.output,
+            generated_output: response.output,
             status: 'completed'
           }
         });

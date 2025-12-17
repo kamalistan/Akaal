@@ -95,11 +95,10 @@ Deno.serve(async (req: Request) => {
     );
 
     await supabase
-      .from('twilio_calls')
+      .from('twilio_call_logs')
       .insert({
         call_sid: callData.sid,
         lead_id: leadId,
-        lead_name: leadName,
         to_number: to,
         from_number: twilioNumber,
         status: callData.status,

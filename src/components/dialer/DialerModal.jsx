@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Pause, Play, Sparkles, Loader2 } from 'lucide-react';
+import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Pause, Play, Sparkles, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase, callEdgeFunction } from '@/lib/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
+import CallStatusIndicator from './CallStatusIndicator';
+import { callAudioManager } from '@/utils/audioUtils';
 
 const outcomeOptions = [
   { value: 'appointment_set', label: 'Appointment Set', icon: Calendar, points: 100, color: 'bg-emerald-500' },
@@ -31,7 +33,10 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
   const [twilioCallSid, setTwilioCallSid] = useState(null);
   const [showCalendly, setShowCalendly] = useState(false);
   const [calendlyUrl, setCalendlyUrl] = useState('');
+  const [callStatus, setCallStatus] = useState(null);
+  const [isMuted, setIsMuted] = useState(false);
   const timerRef = useRef(null);
+  const subscriptionRef = useRef(null);
 
   useEffect(() => {
     const loadCalendlyUrl = async () => {
@@ -50,12 +55,73 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+      }
+      callAudioManager.stopAllSounds();
     };
   }, []);
+
+  useEffect(() => {
+    if (!twilioCallSid) return;
+
+    const channel = supabase
+      .channel(`call_status_${twilioCallSid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'twilio_call_logs',
+          filter: `call_sid=eq.${twilioCallSid}`,
+        },
+        (payload) => {
+          const newStatus = payload.new.status;
+          console.log('Call status updated:', newStatus);
+          setCallStatus(newStatus);
+        }
+      )
+      .subscribe();
+
+    subscriptionRef.current = channel;
+
+    return () => {
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+      }
+    };
+  }, [twilioCallSid]);
+
+  useEffect(() => {
+    if (!callStatus) return;
+
+    switch (callStatus) {
+      case 'initiated':
+      case 'queued':
+        callAudioManager.playDialingSound();
+        break;
+      case 'ringing':
+        callAudioManager.playRingingSound();
+        break;
+      case 'in-progress':
+        callAudioManager.playConnectedSound();
+        setCallState('connected');
+        break;
+      case 'completed':
+      case 'busy':
+      case 'failed':
+      case 'no-answer':
+      case 'canceled':
+        callAudioManager.stopAllSounds();
+        break;
+    }
+  }, [callStatus]);
 
   const startCall = async () => {
     setCallState('calling');
     setCallError('');
+    setCallStatus('queued');
+    callAudioManager.playDialingSound();
 
     try {
       const response = await callEdgeFunction('twilioInitiateCall', {
@@ -66,7 +132,7 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
 
       if (response.success) {
         setTwilioCallSid(response.callSid);
-        setCallState('connected');
+        setCallStatus('initiated');
 
         timerRef.current = setInterval(() => {
           if (!isPaused) {
@@ -76,6 +142,7 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
       } else if (response.needsSetup) {
         setCallError('⚠️ ' + response.error + ' The dialer will work in demo mode for now.');
         setCallState('connected');
+        setCallStatus('in-progress');
 
         timerRef.current = setInterval(() => {
           if (!isPaused) {
@@ -85,11 +152,15 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
       } else {
         setCallError(response.error || 'Failed to initiate call');
         setCallState('ready');
+        setCallStatus(null);
+        callAudioManager.stopAllSounds();
       }
     } catch (error) {
       console.error('Error starting call:', error);
       setCallError(error.message || 'Failed to initiate call');
       setCallState('ready');
+      setCallStatus(null);
+      callAudioManager.stopAllSounds();
     }
   };
 
@@ -104,12 +175,19 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
       }
     }
 
+    callAudioManager.stopAllSounds();
     setCallState('ended');
+    setCallStatus('completed');
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
   const togglePause = () => {
     setIsPaused(!isPaused);
+  };
+
+  const toggleMute = () => {
+    const newMutedState = callAudioManager.toggleMute();
+    setIsMuted(newMutedState);
   };
 
   const formatTime = (seconds) => {
@@ -281,17 +359,34 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
             )}
           </div>
 
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-full transition-all z-30"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          
+          <div className="absolute top-4 right-4 flex gap-2 z-30">
+            {callState !== 'ready' && (
+              <button
+                onClick={toggleMute}
+                className="p-2 hover:bg-white/20 rounded-full transition-all"
+                title={isMuted ? 'Unmute sounds' : 'Mute sounds'}
+              >
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-full transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
           <div className="text-center">
             <h2 className="text-2xl font-bold">{lead?.name}</h2>
             <p className="text-white/80 mt-1">{lead?.company}</p>
             <p className="text-xl font-mono mt-3">{lead?.phone}</p>
+
+            {callStatus && (
+              <div className="mt-4 flex justify-center">
+                <CallStatusIndicator status={callStatus} />
+              </div>
+            )}
           </div>
 
           {/* Timer */}

@@ -139,6 +139,20 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
 
       if (response.success) {
         console.log('Call initiated:', response.callSid);
+
+        setTimeout(async () => {
+          const { data: callCheck } = await supabase
+            .from('active_calls')
+            .select('status')
+            .eq('call_sid', response.callSid)
+            .maybeSingle();
+
+          if (callCheck && (callCheck.status === 'in-progress' || callCheck.status === 'answered' || callCheck.status === 'ringing')) {
+            setCallState('connected');
+          } else if (callCheck && callCheck.status === 'initiating') {
+            setCallState('connected');
+          }
+        }, 3000);
       } else if (response.needsSetup) {
         setCallError('Twilio not configured. Using demo mode.');
         setCallState('connected');
@@ -401,14 +415,35 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
               <p className="text-slate-400 text-sm">Please wait while we connect</p>
               <Button
                 onClick={async () => {
-                  await supabase
-                    .from('active_calls')
-                    .delete()
-                    .eq('user_email', userEmail)
-                    .eq('lead_id', lead.id);
+                  try {
+                    const activeLine = activeLines[0];
+                    if (activeLine?.call_sid) {
+                      await callEdgeFunction('twilioEndCall', {
+                        callSid: activeLine.call_sid,
+                        userEmail: userEmail,
+                        leadId: lead.id
+                      });
+                    }
 
-                  setCallState('ready');
-                  isCallInProgressRef.current = false;
+                    await supabase
+                      .from('active_calls')
+                      .delete()
+                      .eq('user_email', userEmail)
+                      .eq('lead_id', lead.id);
+
+                    setCallState('ready');
+                    isCallInProgressRef.current = false;
+                  } catch (error) {
+                    console.error('Error cancelling call:', error);
+                    await supabase
+                      .from('active_calls')
+                      .delete()
+                      .eq('user_email', userEmail)
+                      .eq('lead_id', lead.id);
+
+                    setCallState('ready');
+                    isCallInProgressRef.current = false;
+                  }
                 }}
                 variant="outline"
                 className="border-red-500 text-red-500 hover:bg-red-50"

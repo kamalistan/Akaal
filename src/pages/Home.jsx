@@ -11,6 +11,7 @@ import DialerModal from '@/components/dialer/DialerModal';
 import PointsPopup from '@/components/dialer/PointsPopup';
 import AIPerformanceCoach from '@/components/ai/AIPerformanceCoach';
 import SessionRecoveryModal from '@/components/dialer/SessionRecoveryModal';
+import DialerFAB from '@/components/dialer/DialerFAB';
 import { createSessionManager } from '@/utils/sessionManager';
 import { Link as LinkIcon, Filter, BarChart3, PhoneCall } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
@@ -382,6 +383,9 @@ export default function Home() {
         onDiscard={handleDiscardSession}
         open={showSessionRecovery}
       />
+
+      {/* Phone Dialer FAB */}
+      <DialerFAB userEmail={currentUser?.email} />
     </div>
   );
 }

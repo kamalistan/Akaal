@@ -12,21 +12,25 @@ import Achievements from "./Achievements";
 
 import Settings from "./Settings";
 
+import PhoneManager from "./PhoneManager";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
-    
+
     Home: Home,
-    
+
     Leads: Leads,
-    
+
     Leaderboard: Leaderboard,
-    
+
     Metrics: Metrics,
-    
+
     Achievements: Achievements,
 
     Settings: Settings,
+
+    PhoneManager: PhoneManager,
 
 }
 
@@ -66,6 +70,8 @@ function PagesContent() {
                 <Route path="/Achievements" element={<Achievements />} />
 
                 <Route path="/Settings" element={<Settings />} />
+
+                <Route path="/PhoneManager" element={<PhoneManager />} />
 
             </Routes>
         </Layout>

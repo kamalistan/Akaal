@@ -58,16 +58,19 @@ export default function MultiLineCallQueue({ activeLines = [] }) {
 
   return (
     <div className="space-y-3 mb-4">
-      <h3 className="text-sm font-semibold text-slate-700">Active Lines</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Active Lines</h3>
+        <span className="text-xs text-slate-500">{activeLines.length} active</span>
+      </div>
       <div className="grid gap-2">
         <AnimatePresence mode="popLayout">
           {activeLines.map((line, index) => {
             const Icon = statusIcons[line.status] || Phone;
             const colorClass = statusColors[line.status] || 'bg-slate-500';
             const label = statusLabels[line.status] || line.status;
-            const isActive = ['ringing', 'in-progress', 'answered'].includes(line.status);
-            const isSpinning = ['initiating', 'queued', 'ringing'].includes(line.status);
-            const isTerminal = ['completed', 'failed', 'busy', 'no-answer', 'canceled', 'voicemail_detected', 'terminated_by_user', 'dropped_other_answered'].includes(line.status);
+            const isActive = line.isActive || false;
+            const isSpinning = line.isDialing || false;
+            const isTerminal = line.isTerminal || false;
 
             return (
               <motion.div
@@ -78,10 +81,17 @@ export default function MultiLineCallQueue({ activeLines = [] }) {
                 transition={{ duration: 0.3 }}
                 layout
               >
-                <Card className={`p-3 ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''} ${isTerminal ? 'opacity-90' : ''}`}>
+                <Card className={`p-3 transition-all ${isActive ? 'ring-2 ring-green-500 ring-offset-2 shadow-lg' : ''} ${isTerminal ? 'opacity-75' : ''}`}>
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${colorClass}`}>
+                    <div className={`p-2 rounded-full ${colorClass} relative`}>
                       <Icon className={`w-4 h-4 text-white ${isSpinning ? 'animate-spin' : ''}`} />
+                      {isActive && (
+                        <motion.div
+                          className="absolute -inset-1 rounded-full border-2 border-green-500"
+                          animate={{ scale: [1, 1.2, 1], opacity: [1, 0.5, 1] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
@@ -100,6 +110,23 @@ export default function MultiLineCallQueue({ activeLines = [] }) {
                           {label}
                         </span>
                       </div>
+                      {line.progress !== undefined && !isTerminal && (
+                        <div className="mt-2">
+                          <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <motion.div
+                              className={`h-full ${colorClass}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${line.progress}%` }}
+                              transition={{ duration: 0.5 }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {line.error_message && (
+                        <p className="text-xs text-red-600 mt-1 truncate">
+                          {line.error_message}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </Card>

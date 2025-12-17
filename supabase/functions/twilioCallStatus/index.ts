@@ -173,6 +173,7 @@ Deno.serve(async (req: Request) => {
               .from('active_calls')
               .update({
                 status: 'dropped_other_answered',
+                status_source: 'system',
                 ended_at: new Date().toISOString(),
               })
               .eq('call_sid', line.call_sid);
@@ -184,6 +185,7 @@ Deno.serve(async (req: Request) => {
         .from('active_calls')
         .update({
           status: callStatus,
+          status_source: 'webhook',
           answered_at: new Date().toISOString(),
         })
         .eq('call_sid', callSid);
@@ -194,6 +196,7 @@ Deno.serve(async (req: Request) => {
         .from('active_calls')
         .update({
           status: callStatus,
+          status_source: 'webhook',
         })
         .eq('call_sid', callSid);
     }
@@ -203,6 +206,7 @@ Deno.serve(async (req: Request) => {
         .from('active_calls')
         .update({
           status: callStatus,
+          status_source: 'webhook',
           ended_at: new Date().toISOString(),
         })
         .eq('call_sid', callSid);

@@ -139,20 +139,6 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
 
       if (response.success) {
         console.log('Call initiated:', response.callSid);
-
-        setTimeout(async () => {
-          const { data: callCheck } = await supabase
-            .from('active_calls')
-            .select('status')
-            .eq('call_sid', response.callSid)
-            .maybeSingle();
-
-          if (callCheck && (callCheck.status === 'in-progress' || callCheck.status === 'answered' || callCheck.status === 'ringing')) {
-            setCallState('connected');
-          } else if (callCheck && callCheck.status === 'initiating') {
-            setCallState('connected');
-          }
-        }, 3000);
       } else if (response.needsSetup) {
         setCallError('Twilio not configured. Using demo mode.');
         setCallState('connected');

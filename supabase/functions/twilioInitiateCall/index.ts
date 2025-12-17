@@ -131,6 +131,7 @@ Deno.serve(async (req: Request) => {
           call_sid: callData.sid,
           line_number: lineNumber,
           status: 'initiating',
+          status_source: 'system',
           started_at: new Date().toISOString(),
         });
     }

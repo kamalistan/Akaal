@@ -362,6 +362,8 @@ export default function Home() {
             onPrev={skipToPrevLead}
             hasNext={leads.length > 1}
             hasPrev={leads.length > 1}
+            sessionId={activeSession?.id}
+            sessionManager={sessionManager.current}
           />
         )}
       </AnimatePresence>

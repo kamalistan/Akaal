@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Pause, Play, Sparkles, Loader2, Volume2, VolumeX } from 'lucide-react';
+import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Pause, Play, Sparkles, Loader2, Volume2, VolumeX, Mic } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase, callEdgeFunction } from '@/lib/supabase';
@@ -17,9 +17,9 @@ const outcomeOptions = [
   { value: 'wrong_number', label: 'Wrong Number', icon: X, points: 2, color: 'bg-red-500' },
 ];
 
-export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev, hasNext, hasPrev, userStats }) {
+export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev, hasNext, hasPrev, userStats, sessionId = null, sessionManager = null }) {
   const { theme, currentTheme } = useTheme();
-  const [callState, setCallState] = useState('ready'); // ready, calling, connected, ended
+  const [callState, setCallState] = useState('ready');
   const [duration, setDuration] = useState(0);
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState('');
@@ -35,23 +35,28 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
   const [calendlyUrl, setCalendlyUrl] = useState('');
   const [callStatus, setCallStatus] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [dialerSettings, setDialerSettings] = useState(null);
+  const [wasVoicemail, setWasVoicemail] = useState(false);
   const timerRef = useRef(null);
   const subscriptionRef = useRef(null);
 
   useEffect(() => {
-    const loadCalendlyUrl = async () => {
+    const loadDialerSettings = async () => {
       const { data } = await supabase
         .from('dialer_settings')
-        .select('calendly_url')
+        .select('*')
         .eq('user_email', 'demo@example.com')
         .maybeSingle();
 
-      if (data?.calendly_url) {
-        setCalendlyUrl(data.calendly_url);
+      if (data) {
+        setDialerSettings(data);
+        if (data.calendly_url) {
+          setCalendlyUrl(data.calendly_url);
+        }
       }
     };
 
-    loadCalendlyUrl();
+    loadDialerSettings();
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -81,6 +86,31 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
           setCallStatus(newStatus);
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'voicemail_detection_logs',
+          filter: `call_sid=eq.${twilioCallSid}`,
+        },
+        (payload) => {
+          const amdResult = payload.new.amd_result;
+          console.log('AMD Result:', amdResult);
+
+          if (amdResult === 'machine_end_beep' || amdResult === 'machine_end_silence') {
+            setWasVoicemail(true);
+
+            const action = dialerSettings?.amd_action || 'disconnect';
+            if (action === 'disconnect') {
+              endCall();
+              setCallError('Voicemail detected - call automatically ended');
+            } else if (action === 'notify') {
+              setCallError('⚠️ Voicemail detected - this appears to be an answering machine');
+            }
+          }
+        }
+      )
       .subscribe();
 
     subscriptionRef.current = channel;
@@ -90,7 +120,7 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
         supabase.removeChannel(subscriptionRef.current);
       }
     };
-  }, [twilioCallSid]);
+  }, [twilioCallSid, dialerSettings]);
 
   useEffect(() => {
     if (!callStatus) return;
@@ -128,6 +158,12 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
         to: lead.phone,
         leadId: lead.id,
         leadName: lead.name,
+        userEmail: 'demo@example.com',
+        lineNumber: 1,
+        enableAMD: dialerSettings?.auto_detect_voicemail || false,
+        amdSensitivity: dialerSettings?.amd_sensitivity || 'medium',
+        enableRecording: dialerSettings?.enable_call_recording || false,
+        sessionId: sessionId,
       });
 
       if (response.success) {
@@ -241,7 +277,11 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
           outcome: selectedOutcome,
           points_earned: outcome.points,
           notes,
-          is_voicemail: selectedOutcome === 'voicemail',
+          user_email: 'demo@example.com',
+          is_voicemail: selectedOutcome === 'voicemail' || wasVoicemail,
+          was_voicemail: wasVoicemail,
+          session_id: sessionId,
+          has_recording: dialerSettings?.enable_call_recording || false,
         })
         .select()
         .single();
@@ -255,6 +295,8 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
                   selectedOutcome === 'not_interested' ? 'not_interested' :
                   selectedOutcome === 'no_answer' ? 'no_answer' : 'contacted',
           last_called: new Date().toISOString(),
+          last_called_at: new Date().toISOString(),
+          last_called_by: 'demo@example.com',
           call_count: (lead.call_count || 0) + 1,
           notes: notes ? `${lead.notes || ''}\n[${new Date().toLocaleDateString()}]: ${notes}` : lead.notes
         })
@@ -381,6 +423,32 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
             <h2 className="text-2xl font-bold">{lead?.name}</h2>
             <p className="text-white/80 mt-1">{lead?.company}</p>
             <p className="text-xl font-mono mt-3">{lead?.phone}</p>
+
+            {dialerSettings && (dialerSettings.auto_detect_voicemail || dialerSettings.enable_call_recording) && (
+              <div className="mt-3 flex justify-center gap-2">
+                {dialerSettings.auto_detect_voicemail && (
+                  <span className="px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium flex items-center gap-1">
+                    <VoicemailIcon className="w-3 h-3" />
+                    AMD: {dialerSettings.amd_sensitivity || 'medium'}
+                  </span>
+                )}
+                {dialerSettings.enable_call_recording && (
+                  <span className="px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium flex items-center gap-1">
+                    <Mic className="w-3 h-3" />
+                    Recording
+                  </span>
+                )}
+              </div>
+            )}
+
+            {wasVoicemail && (
+              <div className="mt-3">
+                <span className="px-3 py-1 bg-orange-500/90 backdrop-blur-sm rounded-full text-xs font-medium flex items-center justify-center gap-1">
+                  <VoicemailIcon className="w-3 h-3" />
+                  Voicemail Detected
+                </span>
+              </div>
+            )}
 
             {callStatus && (
               <div className="mt-4 flex justify-center">
@@ -595,7 +663,7 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
                         <Button
                           onClick={() => {
                             const points = outcomeOptions.find(o => o.value === selectedOutcome)?.points || 0;
-                            onComplete(points);
+                            onComplete(points, sessionId);
                             onClose();
                           }}
                           className="w-full bg-indigo-600 hover:bg-indigo-700"

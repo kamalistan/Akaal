@@ -74,6 +74,20 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     },
   });
 
+  const { data: dialerSettings } = useQuery({
+    queryKey: ['dialerSettings', userEmail],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('dialer_settings')
+        .select('*')
+        .eq('user_email', userEmail)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    },
+  });
+
   const { data: favorites = [] } = useQuery({
     queryKey: ['dialerFavorites', userEmail],
     queryFn: async () => {
@@ -222,6 +236,7 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     }
 
     const normalized = normalizePhoneNumber(validation.cleaned, preferences?.default_country_code);
+    const useMockMode = dialerSettings?.use_mock_dialer || false;
 
     try {
       setIsCallActive(true);
@@ -235,6 +250,32 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
         status: 'initiated',
         started_at: new Date().toISOString(),
       });
+
+      if (useMockMode) {
+        toast.info('Demo Mode: Simulating call...');
+
+        const response = await callEdgeFunction('mockDialerCall', {
+          to: normalized,
+          userEmail: userEmail,
+          leadId: null,
+          leadName: null,
+          lineNumber: 1,
+        });
+
+        if (!response.success) {
+          throw new Error(response.error || 'Failed to initiate call');
+        }
+
+        setCurrentCallSid(response.callSid);
+        setCallStatus('ringing');
+
+        setTimeout(() => {
+          setCallStatus('connected');
+          toast.success('Demo call connected');
+        }, 2000);
+
+        return;
+      }
 
       const response = await callEdgeFunction('twilioInitiateCall', {
         to: normalized,
@@ -274,15 +315,19 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
   };
 
   const endCall = async () => {
+    const useMockMode = dialerSettings?.use_mock_dialer || false;
+
     try {
-      if (currentCallSid) {
+      if (currentCallSid && !useMockMode) {
         await callEdgeFunction('twilioEndCall', {
           callSid: currentCallSid,
           userEmail: userEmail,
         });
       }
 
-      twilioClientManager.disconnectCall();
+      if (!useMockMode) {
+        twilioClientManager.disconnectCall();
+      }
 
       const normalized = normalizePhoneNumber(phoneNumber, preferences?.default_country_code);
 
@@ -299,6 +344,10 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
 
       queryClient.invalidateQueries(['dialerCallHistory']);
 
+      if (useMockMode) {
+        toast.success('Demo call ended');
+      }
+
     } catch (error) {
       console.error('Error ending call:', error);
     } finally {
@@ -311,14 +360,20 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
   };
 
   const toggleMute = () => {
+    const useMockMode = dialerSettings?.use_mock_dialer || false;
+
     if (isMuted) {
-      twilioClientManager.unmuteCall();
+      if (!useMockMode) {
+        twilioClientManager.unmuteCall();
+      }
       setIsMuted(false);
-      toast.success('Microphone unmuted');
+      toast.success(useMockMode ? 'Demo: Microphone unmuted' : 'Microphone unmuted');
     } else {
-      twilioClientManager.muteCall();
+      if (!useMockMode) {
+        twilioClientManager.muteCall();
+      }
       setIsMuted(true);
-      toast.success('Microphone muted');
+      toast.success(useMockMode ? 'Demo: Microphone muted' : 'Microphone muted');
     }
   };
 
@@ -362,6 +417,14 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
               <X className="w-5 h-5 text-slate-600" />
             </button>
           </div>
+
+          {dialerSettings?.use_mock_dialer && (
+            <div className="mb-4 p-3 bg-cyan-50 border border-cyan-200 rounded-xl flex items-center gap-2">
+              <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" />
+              <span className="text-sm font-medium text-cyan-700">Demo Mode Active</span>
+              <span className="text-xs text-cyan-600 ml-auto">Calls are simulated</span>
+            </div>
+          )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-6">

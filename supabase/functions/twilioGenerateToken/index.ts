@@ -19,9 +19,6 @@ Deno.serve(async (req: Request) => {
 
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-    const apiKey = Deno.env.get('TWILIO_API_KEY');
-    const apiSecret = Deno.env.get('TWILIO_API_SECRET');
-    const twimlAppSid = Deno.env.get('TWILIO_TWIML_APP_SID');
 
     if (!accountSid || !authToken) {
       return new Response(
@@ -51,15 +48,15 @@ Deno.serve(async (req: Request) => {
 
     const now = Math.floor(Date.now() / 1000);
     const payload = {
-      jti: `${apiKey || accountSid}-${now}`,
-      iss: apiKey || accountSid,
+      jti: `${accountSid}-${now}`,
+      iss: accountSid,
       sub: accountSid,
       exp: now + ttl,
       grants: {
         identity: identity,
         voice: {
           outgoing: {
-            application_sid: twimlAppSid || accountSid
+            application_sid: accountSid
           },
           incoming: {
             allow: true
@@ -79,7 +76,7 @@ Deno.serve(async (req: Request) => {
     const encodedPayload = base64UrlEncode(JSON.stringify(payload));
     const message = `${encodedHeader}.${encodedPayload}`;
 
-    const secret = apiSecret || authToken;
+    const secret = authToken;
     const key = await crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(secret),

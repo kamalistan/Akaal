@@ -12,14 +12,20 @@ class TwilioClientManager {
   }
 
   async initialize(userEmail = 'demo@example.com') {
-    try {
-      const { token } = await callEdgeFunction('twilioGenerateToken', { userEmail });
+    if (this.isInitialized && this.device) {
+      console.log('Twilio Client already initialized');
+      return true;
+    }
 
-      if (!token) {
-        throw new Error('Failed to get Twilio token');
+    try {
+      const response = await callEdgeFunction('twilioGenerateToken', { userEmail });
+
+      if (!response.success || !response.token) {
+        console.warn('Twilio not configured, skipping client initialization');
+        return false;
       }
 
-      this.device = new Device(token, {
+      this.device = new Device(response.token, {
         codecPreferences: ['opus', 'pcmu'],
         enableImprovedSignalingErrorPrecision: true,
         logLevel: 1,
@@ -28,6 +34,7 @@ class TwilioClientManager {
 
       this.device.on('registered', () => {
         console.log('Twilio Device ready to receive calls');
+        this.isInitialized = true;
       });
 
       this.device.on('error', (error) => {
@@ -76,12 +83,12 @@ class TwilioClientManager {
       });
 
       await this.device.register();
-      this.isInitialized = true;
       console.log('Twilio Client initialized successfully');
       return true;
     } catch (error) {
       console.error('Error initializing Twilio Client:', error);
-      throw error;
+      this.isInitialized = false;
+      return false;
     }
   }
 

@@ -32,6 +32,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   const [submitError, setSubmitError] = useState('');
   const [callError, setCallError] = useState('');
   const [twilioClientReady, setTwilioClientReady] = useState(false);
+  const [hasAudioDevices, setHasAudioDevices] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [dialerSettings, setDialerSettings] = useState(null);
   const timerRef = useRef(null);
@@ -40,44 +41,43 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   const { activeLines, connectedLine, hasActiveLines } = useActiveCallsSync(userEmail);
 
   useEffect(() => {
-    const initializeTwilioClient = async () => {
-      try {
-        if (!twilioClientManager.isReady()) {
-          await twilioClientManager.initialize(userEmail);
-          setTwilioClientReady(true);
+    const cleanupAndInitialize = async () => {
+      await supabase
+        .from('active_calls')
+        .delete()
+        .eq('user_email', userEmail);
 
-          twilioClientManager.onCallAnswered((call) => {
-            console.log('Call answered in browser');
-            setCallState('connected');
-            setCallError('');
+      const success = await twilioClientManager.initialize(userEmail);
+      setTwilioClientReady(true);
+      setHasAudioDevices(success);
 
-            timerRef.current = setInterval(() => {
-              setDuration(d => d + 1);
-            }, 1000);
-          });
+      if (success) {
+        twilioClientManager.onCallAnswered((call) => {
+          console.log('Call answered in browser');
+          setCallState('connected');
+          setCallError('');
 
-          twilioClientManager.onCallEnded(() => {
-            console.log('Call ended');
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-            }
-          });
+          timerRef.current = setInterval(() => {
+            setDuration(d => d + 1);
+          }, 1000);
+        });
 
-          twilioClientManager.onCallError((error) => {
-            console.error('Call error:', error);
-            setCallError(`Call error: ${error.message || 'Unknown error'}`);
-            setCallState('ready');
-          });
-        } else {
-          setTwilioClientReady(true);
-        }
-      } catch (error) {
-        console.error('Failed to initialize Twilio Client:', error);
-        setCallError('Failed to initialize calling system. Please refresh and try again.');
+        twilioClientManager.onCallEnded(() => {
+          console.log('Call ended');
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+          }
+        });
+
+        twilioClientManager.onCallError((error) => {
+          console.error('Call error:', error);
+          setCallError(`Call error: ${error.message || 'Unknown error'}`);
+          setCallState('ready');
+        });
       }
     };
 
-    initializeTwilioClient();
+    cleanupAndInitialize();
 
     const loadDialerSettings = async () => {
       const { data } = await supabase
@@ -112,12 +112,6 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   const startCall = async () => {
     setCallState('calling');
     setCallError('');
-
-    if (!twilioClientReady) {
-      setCallError('Calling system not ready. Please wait...');
-      setCallState('ready');
-      return;
-    }
 
     try {
       const response = await callEdgeFunction('twilioInitiateCall', {
@@ -320,7 +314,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
           </div>
 
           <div className="absolute top-4 right-4 flex gap-2 z-30">
-            {twilioClientReady && <AudioDeviceSelector />}
+            {hasAudioDevices && <AudioDeviceSelector />}
             <button
               onClick={onClose}
               className="p-2 hover:bg-white/20 rounded-full transition-all"
@@ -362,15 +356,8 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
                   {callError}
                 </motion.div>
               )}
-              {!twilioClientReady && (
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Initializing calling system...</span>
-                </div>
-              )}
               <Button
                 onClick={startCall}
-                disabled={!twilioClientReady}
                 className="w-full h-16 text-xl font-semibold rounded-2xl shadow-lg bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30"
               >
                 <Phone className="w-6 h-6 mr-3" />

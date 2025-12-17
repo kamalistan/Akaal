@@ -173,6 +173,16 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
+  const handleModalClose = async () => {
+    await supabase
+      .from('active_calls')
+      .delete()
+      .eq('user_email', userEmail)
+      .in('status', ['initiating', 'queued', 'ringing']);
+
+    onClose();
+  };
+
   const toggleMute = () => {
     if (isMuted) {
       twilioClientManager.unmuteCall();
@@ -327,7 +337,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
           <div className="absolute top-4 right-4 flex gap-2 z-30">
             {hasAudioDevices && <AudioDeviceSelector />}
             <button
-              onClick={onClose}
+              onClick={handleModalClose}
               className="p-2 hover:bg-white/20 rounded-full transition-all"
             >
               <X className="w-5 h-5" />
@@ -507,10 +517,10 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
                       <>
                         <p className="text-slate-700 text-sm leading-relaxed mb-3">{callSummary}</p>
                         <Button
-                          onClick={() => {
+                          onClick={async () => {
                             const points = outcomeOptions.find(o => o.value === selectedOutcome)?.points || 0;
                             onComplete(points, sessionId);
-                            onClose();
+                            await handleModalClose();
                           }}
                           className="w-full bg-indigo-600 hover:bg-indigo-700"
                         >

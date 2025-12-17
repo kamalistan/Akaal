@@ -155,7 +155,7 @@ export class SessionManager {
       }
 
       const { data, error } = await query
-        .order('created_date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data || [];

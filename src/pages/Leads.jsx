@@ -107,7 +107,7 @@ export default function Leads() {
           *,
           pipeline:ghl_pipelines(id, name, stages)
         `)
-        .order('created_date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data || [];
@@ -135,7 +135,6 @@ export default function Leads() {
           ...data,
           status: 'new',
           call_count: 0,
-          created_date: new Date().toISOString(),
         });
 
       if (error) throw error;
@@ -235,7 +234,6 @@ export default function Leads() {
       ...lead,
       status: 'new',
       call_count: 0,
-      created_date: new Date().toISOString(),
     }));
 
     await supabase.from('leads').insert(sampleLeads);

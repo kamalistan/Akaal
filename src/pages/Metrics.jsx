@@ -46,7 +46,7 @@ export default function Metrics() {
       const { data, error } = await supabase
         .from('call_logs')
         .select()
-        .order('created_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1000);
 
       if (error) throw error;
@@ -64,7 +64,7 @@ export default function Metrics() {
   };
 
   const callLogs = allCallLogs.filter(log => {
-    const logDate = parseISO(log.created_date);
+    const logDate = parseISO(log.created_at);
     return isAfter(logDate, getStartDate());
   });
 
@@ -91,7 +91,7 @@ export default function Metrics() {
     const dataMap = {};
     
     callLogs.forEach(log => {
-      const day = format(parseISO(log.created_date), selectedRange === 'month' ? 'MMM d' : 'EEE');
+      const day = format(parseISO(log.created_at), selectedRange === 'month' ? 'MMM d' : 'EEE');
       if (!dataMap[day]) {
         dataMap[day] = { name: day, totalCalls: 0, appointments: 0 };
       }
@@ -124,7 +124,7 @@ export default function Metrics() {
     const hourMap = {};
 
     callLogs.forEach(log => {
-      const date = parseISO(log.created_date);
+      const date = parseISO(log.created_at);
       const day = format(date, 'EEEE');
       const hour = date.getHours();
 

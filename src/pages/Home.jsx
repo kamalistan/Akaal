@@ -125,7 +125,7 @@ export default function Home() {
       }
 
       const { data, error } = await query
-        .order('created_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(100);
 
       if (error) throw error;

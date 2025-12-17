@@ -117,35 +117,22 @@ Deno.serve(async (req: Request) => {
       });
 
     if (userEmail && leadId) {
-      const { data: existingCall } = await supabase
+      await supabase
         .from('active_calls')
-        .select('*')
+        .delete()
         .eq('user_email', userEmail)
-        .eq('lead_id', leadId)
-        .in('status', ['initiating', 'queued', 'ringing'])
-        .maybeSingle();
+        .eq('lead_id', leadId);
 
-      if (existingCall) {
-        await supabase
-          .from('active_calls')
-          .update({
-            call_sid: callData.sid,
-            status: 'initiating',
-            started_at: new Date().toISOString(),
-          })
-          .eq('id', existingCall.id);
-      } else {
-        await supabase
-          .from('active_calls')
-          .insert({
-            user_email: userEmail,
-            lead_id: leadId,
-            call_sid: callData.sid,
-            line_number: lineNumber,
-            status: 'initiating',
-            started_at: new Date().toISOString(),
-          });
-      }
+      await supabase
+        .from('active_calls')
+        .insert({
+          user_email: userEmail,
+          lead_id: leadId,
+          call_sid: callData.sid,
+          line_number: lineNumber,
+          status: 'initiating',
+          started_at: new Date().toISOString(),
+        });
     }
 
     return new Response(

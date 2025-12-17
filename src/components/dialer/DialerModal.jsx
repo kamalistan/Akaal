@@ -108,8 +108,11 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
           setDuration(d => d + 1);
         }, 1000);
       }
+    } else if (!connectedLine && !hasActiveLines && callState === 'calling') {
+      setCallState('ready');
+      isCallInProgressRef.current = false;
     }
-  }, [connectedLine, callState]);
+  }, [connectedLine, callState, hasActiveLines]);
 
   const startCall = async () => {
     if (isCallInProgressRef.current) {
@@ -387,15 +390,32 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             </motion.div>
           )}
 
-          {callState === 'calling' && !hasActiveLines && (
+          {(callState === 'calling' || hasActiveLines) && !connectedLine && (
             <motion.div
-              className="text-center py-8"
+              className="text-center py-6 space-y-4"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
               <Loader2 className="w-12 h-12 mx-auto text-indigo-600 animate-spin mb-4" />
               <p className="text-slate-600 font-medium">Dialing...</p>
-              <p className="text-slate-400 text-sm mt-2">Please wait while we connect</p>
+              <p className="text-slate-400 text-sm">Please wait while we connect</p>
+              <Button
+                onClick={async () => {
+                  await supabase
+                    .from('active_calls')
+                    .delete()
+                    .eq('user_email', userEmail)
+                    .eq('lead_id', lead.id);
+
+                  setCallState('ready');
+                  isCallInProgressRef.current = false;
+                }}
+                variant="outline"
+                className="border-red-500 text-red-500 hover:bg-red-50"
+              >
+                <PhoneOff className="w-4 h-4 mr-2" />
+                Cancel Call
+              </Button>
             </motion.div>
           )}
 

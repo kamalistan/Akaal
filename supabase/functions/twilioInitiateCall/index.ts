@@ -31,7 +31,6 @@ Deno.serve(async (req: Request) => {
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioNumber = Deno.env.get('TWILIO_NUMBER');
-    const userPhone = Deno.env.get('USER_PHONE');
 
     if (!accountSid || !authToken || !twilioNumber) {
       return new Response(
@@ -54,25 +53,18 @@ Deno.serve(async (req: Request) => {
       throw new Error('Phone number is required');
     }
 
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const callbackUrl = `${supabaseUrl}/functions/v1/twilioCallStatus`;
 
-    const twiml = userPhone
-      ? `<Response>
-           <Say voice="Polly.Joanna">Connecting you to ${leadName || 'your contact'}. Please wait.</Say>
-           <Dial callerId="${twilioNumber}" timeout="30" ${enableRecording ? 'record="record-from-answer" recordingStatusCallback="' + callbackUrl + '/recording"' : ''}>
-             <Number>${to}</Number>
-           </Dial>
-         </Response>`
-      : `<Response>
-           <Say voice="Polly.Joanna">This is a test call to ${leadName || 'contact'}. Your Twilio is working correctly.</Say>
-           <Pause length="2"/>
-         </Response>`;
-
     const formData = new URLSearchParams();
-    formData.append('To', userPhone || to);
+    formData.append('To', to);
     formData.append('From', twilioNumber);
-    formData.append('Twiml', twiml);
+    formData.append('Url', `${callbackUrl}/twiml?leadName=${encodeURIComponent(leadName || 'contact')}&sessionId=${sessionId || ''}&lineNumber=${lineNumber}&leadId=${leadId || ''}`);
     formData.append('StatusCallback', callbackUrl);
     formData.append('StatusCallbackEvent', 'initiated,ringing,answered,completed');
     formData.append('StatusCallbackMethod', 'POST');
@@ -87,13 +79,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (enableRecording) {
-      formData.append('Record', 'true');
+      formData.append('Record', 'record-from-answer');
       formData.append('RecordingStatusCallback', `${callbackUrl}/recording`);
       formData.append('RecordingStatusCallbackEvent', 'completed');
     }
 
     const auth = btoa(`${accountSid}:${authToken}`);
-    
+
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
       {
@@ -113,11 +105,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const callData = await response.json();
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
 
     await supabase
       .from('twilio_call_logs')
@@ -150,6 +137,9 @@ Deno.serve(async (req: Request) => {
         to: callData.to,
         from: callData.from,
         lineNumber: lineNumber,
+        leadId: leadId,
+        leadName: leadName,
+        sessionId: sessionId,
         amdEnabled: enableAMD,
         recordingEnabled: enableRecording,
       }),
@@ -163,9 +153,9 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error('Error in twilioInitiateCall:', error);
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message || 'Failed to initiate call' 
+      JSON.stringify({
+        success: false,
+        error: error.message || 'Failed to initiate call'
       }),
       {
         status: 500,

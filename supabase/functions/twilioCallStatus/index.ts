@@ -16,6 +16,25 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const url = new URL(req.url);
+
+    if (url.pathname.includes('/twiml')) {
+      const leadName = url.searchParams.get('leadName') || 'contact';
+      const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Hello, connecting you with ${leadName}. Please hold.</Say>
+  <Dial>
+    <Client>browser_client</Client>
+  </Dial>
+</Response>`;
+
+      return new Response(twimlResponse, {
+        headers: {
+          'Content-Type': 'application/xml',
+        },
+      });
+    }
+
     const formData = await req.formData();
     const callSid = formData.get('CallSid');
     const callStatus = formData.get('CallStatus');
@@ -62,26 +81,105 @@ Deno.serve(async (req: Request) => {
       console.error('Error saving call status:', error);
     }
 
-    if (answeredBy) {
-      const { data: callLog } = await supabase
-        .from('twilio_call_logs')
-        .select('lead_id')
-        .eq('call_sid', callSid)
-        .maybeSingle();
+    const { data: activeCall } = await supabase
+      .from('active_calls')
+      .select('*, lead_id')
+      .eq('call_sid', callSid)
+      .maybeSingle();
 
+    if (answeredBy) {
       await supabase
         .from('voicemail_detection_logs')
         .insert({
           call_sid: callSid,
-          lead_id: callLog?.lead_id,
-          user_email: 'demo@example.com',
+          lead_id: activeCall?.lead_id,
+          user_email: activeCall?.user_email || 'demo@example.com',
           amd_result: answeredBy,
           confidence_score: machineDetectionDuration ? parseFloat(machineDetectionDuration) / 100 : null,
           created_at: new Date().toISOString(),
         });
+
+      if (answeredBy === 'machine_end_beep' || answeredBy === 'machine_end_silence' || answeredBy === 'machine_start') {
+        console.log('Voicemail detected, terminating call and dialing next lead');
+
+        const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+        const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+        if (accountSid && authToken) {
+          const auth = btoa(`${accountSid}:${authToken}`);
+          await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: 'Status=completed',
+            }
+          );
+        }
+
+        await supabase
+          .from('active_calls')
+          .update({
+            status: 'voicemail_detected',
+            ended_at: new Date().toISOString(),
+          })
+          .eq('call_sid', callSid);
+
+        return new Response(
+          '<Response></Response>',
+          {
+            headers: {
+              'Content-Type': 'application/xml',
+            },
+          }
+        );
+      }
     }
 
-    if (callStatus === 'answered' || callStatus === 'in-progress') {
+    if (callStatus === 'in-progress' && activeCall) {
+      const { data: otherLines } = await supabase
+        .from('active_calls')
+        .select('call_sid')
+        .eq('user_email', activeCall.user_email)
+        .neq('call_sid', callSid)
+        .in('status', ['initiating', 'queued', 'ringing']);
+
+      if (otherLines && otherLines.length > 0) {
+        console.log('Call answered, dropping other lines:', otherLines.map(l => l.call_sid));
+
+        const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+        const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+        if (accountSid && authToken) {
+          const auth = btoa(`${accountSid}:${authToken}`);
+
+          for (const line of otherLines) {
+            await fetch(
+              `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${line.call_sid}.json`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${auth}`,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'Status=completed',
+              }
+            );
+
+            await supabase
+              .from('active_calls')
+              .update({
+                status: 'dropped_other_answered',
+                ended_at: new Date().toISOString(),
+              })
+              .eq('call_sid', line.call_sid);
+          }
+        }
+      }
+
       await supabase
         .from('active_calls')
         .update({
@@ -91,7 +189,16 @@ Deno.serve(async (req: Request) => {
         .eq('call_sid', callSid);
     }
 
-    if (callStatus === 'completed' || callStatus === 'failed' || callStatus === 'busy' || callStatus === 'no-answer') {
+    if (callStatus === 'answered' || callStatus === 'ringing' || callStatus === 'queued') {
+      await supabase
+        .from('active_calls')
+        .update({
+          status: callStatus,
+        })
+        .eq('call_sid', callSid);
+    }
+
+    if (callStatus === 'completed' || callStatus === 'failed' || callStatus === 'busy' || callStatus === 'no-answer' || callStatus === 'canceled') {
       await supabase
         .from('active_calls')
         .update({

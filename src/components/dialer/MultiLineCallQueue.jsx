@@ -27,28 +27,28 @@ const statusColors = {
   answered: 'bg-green-500',
   completed: 'bg-slate-400',
   failed: 'bg-red-500',
-  busy: 'bg-orange-500',
-  'no-answer': 'bg-slate-400',
-  voicemail_detected: 'bg-purple-500',
+  busy: 'bg-red-500',
+  'no-answer': 'bg-red-500',
+  voicemail_detected: 'bg-orange-500',
   dropped_other_answered: 'bg-slate-400',
   terminated_by_user: 'bg-slate-400',
-  canceled: 'bg-slate-400',
+  canceled: 'bg-red-500',
 };
 
 const statusLabels = {
-  initiating: 'Initiating',
-  queued: 'Queued',
-  ringing: 'Ringing',
+  initiating: 'Dialing',
+  queued: 'Dialing',
+  ringing: 'Dialing',
   'in-progress': 'Connected',
   answered: 'Answered',
-  completed: 'Completed',
-  failed: 'Failed',
-  busy: 'Busy',
-  'no-answer': 'No Answer',
+  completed: 'Ended',
+  failed: 'Declined',
+  busy: 'Declined',
+  'no-answer': 'Declined',
   voicemail_detected: 'Voicemail',
   dropped_other_answered: 'Dropped',
   terminated_by_user: 'Ended',
-  canceled: 'Canceled',
+  canceled: 'Declined',
 };
 
 export default function MultiLineCallQueue({ activeLines = [] }) {
@@ -66,17 +66,19 @@ export default function MultiLineCallQueue({ activeLines = [] }) {
             const colorClass = statusColors[line.status] || 'bg-slate-500';
             const label = statusLabels[line.status] || line.status;
             const isActive = ['ringing', 'in-progress', 'answered'].includes(line.status);
-            const isSpinning = ['initiating', 'queued'].includes(line.status);
+            const isSpinning = ['initiating', 'queued', 'ringing'].includes(line.status);
+            const isTerminal = ['completed', 'failed', 'busy', 'no-answer', 'canceled', 'voicemail_detected', 'terminated_by_user', 'dropped_other_answered'].includes(line.status);
 
             return (
               <motion.div
                 key={line.call_sid || `line-${index}`}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
+                exit={{ opacity: 0, scale: 0.9, x: 20 }}
+                transition={{ duration: 0.3 }}
                 layout
               >
-                <Card className={`p-3 ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
+                <Card className={`p-3 ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''} ${isTerminal ? 'opacity-90' : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-full ${colorClass}`}>
                       <Icon className={`w-4 h-4 text-white ${isSpinning ? 'animate-spin' : ''}`} />

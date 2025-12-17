@@ -384,8 +384,8 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
               animate={{ opacity: 1 }}
             >
               <Loader2 className="w-12 h-12 mx-auto text-indigo-600 animate-spin mb-4" />
-              <p className="text-slate-600 font-medium">Connecting call...</p>
-              <p className="text-slate-400 text-sm mt-2">Please wait while we dial the lead</p>
+              <p className="text-slate-600 font-medium">Dialing...</p>
+              <p className="text-slate-400 text-sm mt-2">Please wait while we connect</p>
             </motion.div>
           )}
 

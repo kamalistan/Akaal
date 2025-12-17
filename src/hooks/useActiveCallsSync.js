@@ -20,11 +20,13 @@ export function useActiveCallsSync(userEmail) {
         )
       `)
       .eq('user_email', userEmail)
-      .in('status', ['initiating', 'queued', 'ringing', 'in-progress'])
+      .in('status', ['initiating', 'queued', 'ringing', 'in-progress', 'busy', 'canceled', 'failed', 'no-answer', 'completed', 'voicemail_detected', 'terminated_by_user'])
       .order('line_number', { ascending: true });
 
     if (!error && data) {
       const uniqueCallSids = new Set();
+      const terminalStatuses = ['completed', 'failed', 'busy', 'no-answer', 'canceled', 'voicemail_detected', 'terminated_by_user', 'dropped_other_answered'];
+
       const enrichedLines = data
         .filter(call => {
           if (uniqueCallSids.has(call.call_sid)) {
@@ -40,6 +42,16 @@ export function useActiveCallsSync(userEmail) {
         }));
 
       setActiveLines(enrichedLines);
+
+      enrichedLines.forEach(line => {
+        if (terminalStatuses.includes(line.status)) {
+          setTimeout(() => {
+            setActiveLines(prev =>
+              prev.filter(l => l.call_sid !== line.call_sid)
+            );
+          }, 2500);
+        }
+      });
 
       const connected = enrichedLines.find(line => line.status === 'in-progress');
       setConnectedLine(connected || null);

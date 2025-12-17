@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Sparkles, Loader2, Mic, MicOff } from 'lucide-react';
+import { X, Phone, PhoneOff, Calendar, PhoneMissed, VoicemailIcon, Ban, ChevronRight, ChevronLeft, Sparkles, Loader2, Mic, MicOff, Wifi, WifiOff } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase, callEdgeFunction } from '@/lib/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
 import { twilioClientManager } from '@/utils/twilioClient';
-import { useActiveCallsSync } from '@/hooks/useActiveCallsSync';
-import MultiLineCallQueue from './MultiLineCallQueue';
+import { useCallSubscription } from '@/hooks/useCallSubscription';
 import AudioDeviceSelector from './AudioDeviceSelector';
 
 const outcomeOptions = [
@@ -19,10 +18,12 @@ const outcomeOptions = [
   { value: 'wrong_number', label: 'Wrong Number', icon: X, points: 2, color: 'bg-red-500' },
 ];
 
-export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPrev, hasNext, hasPrev, userStats, sessionId = null, sessionManager = null }) {
+export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev, hasNext, hasPrev, userStats, sessionId = null, sessionManager = null }) {
   const { theme, currentTheme } = useTheme();
-  const [callState, setCallState] = useState('ready');
-  const [duration, setDuration] = useState(0);
+  const userEmail = 'demo@example.com';
+
+  const { currentCall, isConnected, clearCall, updateCallStatus } = useCallSubscription(userEmail, lead?.id);
+
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState('');
   const [callSummary, setCallSummary] = useState('');
@@ -35,52 +36,14 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   const [hasAudioDevices, setHasAudioDevices] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [dialerSettings, setDialerSettings] = useState(null);
+  const [duration, setDuration] = useState(0);
   const timerRef = useRef(null);
-  const isCallInProgressRef = useRef(false);
-  const userEmail = 'demo@example.com';
 
-  const { activeLines, connectedLine, hasActiveLines } = useActiveCallsSync(userEmail);
+  const callStatus = currentCall?.status || 'idle';
+  const isCallActive = currentCall?.isActive || false;
+  const isCallConnected = callStatus === 'in-progress' || callStatus === 'connected';
 
   useEffect(() => {
-    const cleanupAndInitialize = async () => {
-      await supabase
-        .from('active_calls')
-        .delete()
-        .eq('user_email', userEmail)
-        .in('status', ['completed', 'failed', 'busy', 'no-answer', 'canceled', 'voicemail_detected', 'dropped_other_answered']);
-
-      const success = await twilioClientManager.initialize(userEmail);
-      setTwilioClientReady(true);
-      setHasAudioDevices(success);
-
-      if (success) {
-        twilioClientManager.onCallAnswered((call) => {
-          console.log('Call answered in browser');
-          setCallState('connected');
-          setCallError('');
-
-          timerRef.current = setInterval(() => {
-            setDuration(d => d + 1);
-          }, 1000);
-        });
-
-        twilioClientManager.onCallEnded(() => {
-          console.log('Call ended');
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-          }
-        });
-
-        twilioClientManager.onCallError((error) => {
-          console.error('Call error:', error);
-          setCallError(`Call error: ${error.message || 'Unknown error'}`);
-          setCallState('ready');
-        });
-      }
-    };
-
-    cleanupAndInitialize();
-
     const loadDialerSettings = async () => {
       const { data } = await supabase
         .from('dialer_settings')
@@ -90,10 +53,35 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
 
       if (data) {
         setDialerSettings(data);
+      } else {
+        setDialerSettings({ use_mock_dialer: false });
       }
     };
 
     loadDialerSettings();
+
+    const initializeTwilio = async () => {
+      const success = await twilioClientManager.initialize(userEmail);
+      setTwilioClientReady(true);
+      setHasAudioDevices(success);
+
+      if (success) {
+        twilioClientManager.onCallAnswered(() => {
+          console.log('Twilio call answered in browser');
+        });
+
+        twilioClientManager.onCallEnded(() => {
+          console.log('Twilio call ended');
+        });
+
+        twilioClientManager.onCallError((error) => {
+          console.error('Twilio call error:', error);
+          setCallError(`Call error: ${error.message || 'Unknown error'}`);
+        });
+      }
+    };
+
+    initializeTwilio();
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -101,88 +89,133 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   }, []);
 
   useEffect(() => {
-    if (connectedLine && callState !== 'connected') {
-      setCallState('connected');
+    if (isCallConnected) {
       if (!timerRef.current) {
         timerRef.current = setInterval(() => {
           setDuration(d => d + 1);
         }, 1000);
       }
-    } else if (!connectedLine && !hasActiveLines && callState === 'calling') {
-      setCallState('ready');
-      isCallInProgressRef.current = false;
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (callStatus === 'idle' || !currentCall) {
+        setDuration(0);
+      }
     }
-  }, [connectedLine, callState, hasActiveLines]);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [isCallConnected, callStatus, currentCall]);
+
+  useEffect(() => {
+    if (currentCall?.last_error) {
+      setCallError(currentCall.last_error);
+    }
+  }, [currentCall]);
 
   const startCall = async () => {
-    if (isCallInProgressRef.current) {
-      console.log('Call already in progress, ignoring duplicate click');
+    if (isCallActive) {
+      console.log('Call already in progress');
       return;
     }
 
-    isCallInProgressRef.current = true;
-    setCallState('calling');
     setCallError('');
+    setDuration(0);
 
     try {
-      const response = await callEdgeFunction('twilioInitiateCall', {
-        to: lead.phone,
-        leadId: lead.id,
-        leadName: lead.name,
-        userEmail: userEmail,
-        lineNumber: 1,
-        enableAMD: dialerSettings?.auto_detect_voicemail || false,
-        amdSensitivity: dialerSettings?.amd_sensitivity || 'medium',
-        enableRecording: dialerSettings?.enable_call_recording || false,
-        sessionId: sessionId,
-      });
+      const useMockMode = dialerSettings?.use_mock_dialer || false;
 
-      if (response.success) {
-        console.log('Call initiated:', response.callSid);
-      } else if (response.needsSetup) {
-        setCallError('Twilio not configured. Using demo mode.');
-        setCallState('connected');
+      if (useMockMode) {
+        console.log('Using mock dialer mode');
+        const response = await callEdgeFunction('mockDialerCall', {
+          to: lead.phone,
+          leadId: lead.id,
+          leadName: lead.name,
+          userEmail: userEmail,
+          lineNumber: 1,
+          sessionId: sessionId,
+          mockConfig: dialerSettings?.mock_config || {},
+        });
 
-        timerRef.current = setInterval(() => {
-          setDuration(d => d + 1);
-        }, 1000);
+        if (!response.success) {
+          throw new Error(response.error || 'Failed to initiate mock call');
+        }
       } else {
-        setCallError(response.error || 'Failed to initiate call');
-        setCallState('ready');
-        isCallInProgressRef.current = false;
+        console.log('Using real Twilio dialer');
+        const response = await callEdgeFunction('twilioInitiateCall', {
+          to: lead.phone,
+          leadId: lead.id,
+          leadName: lead.name,
+          userEmail: userEmail,
+          lineNumber: 1,
+          enableAMD: dialerSettings?.auto_detect_voicemail || false,
+          amdSensitivity: dialerSettings?.amd_sensitivity || 'medium',
+          enableRecording: dialerSettings?.enable_call_recording || false,
+          sessionId: sessionId,
+        });
+
+        if (response.needsSetup) {
+          setCallError('Twilio not configured. Enable Demo Mode in Settings to test without Twilio.');
+        } else if (!response.success) {
+          throw new Error(response.error || 'Failed to initiate call');
+        }
       }
     } catch (error) {
       console.error('Error starting call:', error);
       setCallError(error.message || 'Failed to initiate call');
-      setCallState('ready');
-      isCallInProgressRef.current = false;
     }
   };
 
   const endCall = async () => {
     try {
-      await callEdgeFunction('twilioEndCall', {
-        callSid: connectedLine?.call_sid,
-        userEmail: userEmail,
-      });
+      if (!currentCall?.is_mock) {
+        await callEdgeFunction('twilioEndCall', {
+          callSid: currentCall?.call_sid,
+          userEmail: userEmail,
+        });
+        twilioClientManager.disconnectCall();
+      }
 
-      twilioClientManager.disconnectCall();
+      await updateCallStatus('ended', { ended_at: new Date().toISOString() });
     } catch (error) {
       console.error('Error ending call:', error);
+      await updateCallStatus('ended', { ended_at: new Date().toISOString() });
     }
 
-    isCallInProgressRef.current = false;
-    setCallState('ended');
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const cancelCall = async () => {
+    try {
+      if (currentCall?.call_sid && !currentCall?.is_mock) {
+        await callEdgeFunction('twilioEndCall', {
+          callSid: currentCall.call_sid,
+          userEmail: userEmail,
+          leadId: lead.id
+        });
+      }
+
+      await clearCall();
+      setCallError('');
+    } catch (error) {
+      console.error('Error cancelling call:', error);
+      await clearCall();
+    }
   };
 
   const handleModalClose = async () => {
-    await supabase
-      .from('active_calls')
-      .delete()
-      .eq('user_email', userEmail)
-      .in('status', ['initiating', 'queued', 'ringing']);
-
+    if (isCallActive) {
+      await cancelCall();
+    }
     onClose();
   };
 
@@ -293,6 +326,8 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
         if (statsUpdateError) throw statsUpdateError;
       }
 
+      await clearCall();
+
       if (callLog?.id) {
         await generateSummary(callLog.id);
       }
@@ -302,6 +337,11 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
       setIsSubmitting(false);
     }
   };
+
+  const showReadyState = callStatus === 'idle' || !currentCall;
+  const showDialingState = callStatus === 'dialing' || callStatus === 'initiating' || callStatus === 'queued' || callStatus === 'ringing';
+  const showConnectedState = isCallConnected;
+  const showEndedState = callStatus === 'ended' || (currentCall?.isTerminal && callStatus !== 'idle');
 
   return (
     <motion.div
@@ -315,12 +355,12 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
       >
-        <div className="p-6 text-white relative bg-gradient-to-r from-indigo-600 to-purple-600">
+        <div className="p-6 text-white relative bg-gradient-to-r from-blue-600 to-cyan-600">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 flex gap-2 z-30">
             {hasPrev && (
               <button
                 onClick={onPrev}
-                disabled={callState !== 'ready'}
+                disabled={isCallActive}
                 className="p-2 hover:bg-white/20 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -329,7 +369,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             {hasNext && (
               <button
                 onClick={onNext}
-                disabled={callState !== 'ready'}
+                disabled={isCallActive}
                 className="p-2 hover:bg-white/20 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight className="w-5 h-5" />
@@ -338,6 +378,11 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
           </div>
 
           <div className="absolute top-4 right-4 flex gap-2 z-30">
+            {isConnected ? (
+              <Wifi className="w-4 h-4 text-white/60" title="Real-time connected" />
+            ) : (
+              <WifiOff className="w-4 h-4 text-white/40" title="Real-time disconnected" />
+            )}
             {hasAudioDevices && <AudioDeviceSelector />}
             <button
               onClick={handleModalClose}
@@ -351,9 +396,14 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             <h2 className="text-2xl font-bold">{lead?.name}</h2>
             <p className="text-white/80 mt-1">{lead?.company}</p>
             <p className="text-xl font-mono mt-3">{lead?.phone}</p>
+            {currentCall?.is_mock && (
+              <div className="mt-2 inline-block px-3 py-1 bg-white/20 rounded-full text-xs">
+                Demo Mode
+              </div>
+            )}
           </div>
 
-          {callState !== 'ready' && (
+          {showConnectedState && (
             <motion.div
               className="text-center mt-4"
               initial={{ scale: 0 }}
@@ -362,14 +412,23 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
               <span className="text-4xl font-mono font-bold">{formatTime(duration)}</span>
             </motion.div>
           )}
+
+          {showDialingState && (
+            <motion.div
+              className="text-center mt-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 rounded-full">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm font-medium">{currentCall?.statusInfo?.label || 'Calling...'}</span>
+              </div>
+            </motion.div>
+          )}
         </div>
 
         <div className="p-6">
-          {hasActiveLines && (
-            <MultiLineCallQueue activeLines={activeLines} />
-          )}
-
-          {callState === 'ready' && (
+          {showReadyState && (
             <motion.div className="text-center space-y-4">
               {callError && (
                 <motion.div
@@ -390,47 +449,16 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             </motion.div>
           )}
 
-          {(callState === 'calling' || hasActiveLines) && !connectedLine && (
+          {showDialingState && (
             <motion.div
               className="text-center py-6 space-y-4"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              <Loader2 className="w-12 h-12 mx-auto text-indigo-600 animate-spin mb-4" />
-              <p className="text-slate-600 font-medium">Dialing...</p>
-              <p className="text-slate-400 text-sm">Please wait while we connect</p>
+              <p className="text-slate-600 font-medium">Connecting to {lead.name}...</p>
+              <p className="text-slate-400 text-sm">Please wait while we establish the connection</p>
               <Button
-                onClick={async () => {
-                  try {
-                    const activeLine = activeLines[0];
-                    if (activeLine?.call_sid) {
-                      await callEdgeFunction('twilioEndCall', {
-                        callSid: activeLine.call_sid,
-                        userEmail: userEmail,
-                        leadId: lead.id
-                      });
-                    }
-
-                    await supabase
-                      .from('active_calls')
-                      .delete()
-                      .eq('user_email', userEmail)
-                      .eq('lead_id', lead.id);
-
-                    setCallState('ready');
-                    isCallInProgressRef.current = false;
-                  } catch (error) {
-                    console.error('Error cancelling call:', error);
-                    await supabase
-                      .from('active_calls')
-                      .delete()
-                      .eq('user_email', userEmail)
-                      .eq('lead_id', lead.id);
-
-                    setCallState('ready');
-                    isCallInProgressRef.current = false;
-                  }
-                }}
+                onClick={cancelCall}
                 variant="outline"
                 className="border-red-500 text-red-500 hover:bg-red-50"
               >
@@ -440,7 +468,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             </motion.div>
           )}
 
-          {callState === 'connected' && (
+          {showConnectedState && (
             <motion.div
               className="flex justify-center gap-4"
               initial={{ opacity: 0 }}
@@ -463,7 +491,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             </motion.div>
           )}
 
-          {callState === 'ended' && (
+          {showEndedState && (
             <motion.div
               className="space-y-4"
               initial={{ opacity: 0, y: 10 }}
@@ -481,7 +509,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
                       className={`
                         p-4 rounded-2xl border-2 transition-all text-left
                         ${isSelected
-                          ? 'border-indigo-500 bg-indigo-50'
+                          ? 'border-blue-500 bg-blue-50'
                           : 'border-slate-200 hover:border-slate-300'
                         }
                       `}
@@ -522,7 +550,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
               <Button
                 onClick={handleSubmit}
                 disabled={!selectedOutcome || isSubmitting || isGeneratingSummary}
-                className="w-full h-14 bg-gradient-to-r rounded-2xl text-lg font-semibold shadow-lg disabled:opacity-50 from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-500/30"
+                className="w-full h-14 bg-gradient-to-r rounded-2xl text-lg font-semibold shadow-lg disabled:opacity-50 from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-blue-500/30"
               >
                 {isSubmitting ? (
                   <>
@@ -543,14 +571,14 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl"
+                    className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-2xl"
                   >
                     <div className="flex items-center gap-2 mb-3">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      <h4 className="text-sm font-semibold text-indigo-900">AI Call Summary</h4>
+                      <Sparkles className="w-4 h-4 text-blue-600" />
+                      <h4 className="text-sm font-semibold text-blue-900">AI Call Summary</h4>
                     </div>
                     {isGeneratingSummary ? (
-                      <div className="flex items-center gap-2 text-indigo-600 text-sm">
+                      <div className="flex items-center gap-2 text-blue-600 text-sm">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Analyzing call...</span>
                       </div>
@@ -563,7 +591,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
                             onComplete(points, sessionId);
                             await handleModalClose();
                           }}
-                          className="w-full bg-indigo-600 hover:bg-indigo-700"
+                          className="w-full bg-blue-600 hover:bg-blue-700"
                         >
                           Done
                         </Button>

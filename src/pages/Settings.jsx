@@ -181,6 +181,25 @@ export default function Settings() {
               <h2 className="text-xl font-bold text-white">Dialer Settings</h2>
             </div>
             <div className="space-y-6">
+              <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <Label className="text-white font-medium">Demo Mode</Label>
+                    <p className="text-cyan-300 text-sm mt-1">Test dialing without Twilio credentials</p>
+                  </div>
+                  <Switch
+                    checked={settings.use_mock_dialer}
+                    onCheckedChange={(checked) => handleSettingChange('use_mock_dialer', checked)}
+                  />
+                </div>
+                <div className="text-cyan-400 text-xs space-y-1">
+                  <p>• Perfect for testing and development</p>
+                  <p>• Simulates realistic call flow with status transitions</p>
+                  <p>• No Twilio account required</p>
+                  <p>• All features work as they would in production</p>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-white font-medium">Double Dial</Label>

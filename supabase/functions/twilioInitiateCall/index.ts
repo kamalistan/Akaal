@@ -16,8 +16,18 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { to, leadId, leadName } = await req.json();
-    
+    const {
+      to,
+      leadId,
+      leadName,
+      userEmail,
+      lineNumber = 1,
+      enableAMD = false,
+      amdSensitivity = 'medium',
+      enableRecording = false,
+      sessionId = null
+    } = await req.json();
+
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioNumber = Deno.env.get('TWILIO_NUMBER');
@@ -50,7 +60,7 @@ Deno.serve(async (req: Request) => {
     const twiml = userPhone
       ? `<Response>
            <Say voice="Polly.Joanna">Connecting you to ${leadName || 'your contact'}. Please wait.</Say>
-           <Dial callerId="${twilioNumber}" timeout="30">
+           <Dial callerId="${twilioNumber}" timeout="30" ${enableRecording ? 'record="record-from-answer" recordingStatusCallback="' + callbackUrl + '/recording"' : ''}>
              <Number>${to}</Number>
            </Dial>
          </Response>`
@@ -66,6 +76,21 @@ Deno.serve(async (req: Request) => {
     formData.append('StatusCallback', callbackUrl);
     formData.append('StatusCallbackEvent', 'initiated,ringing,answered,completed');
     formData.append('StatusCallbackMethod', 'POST');
+
+    if (enableAMD) {
+      formData.append('MachineDetection', 'DetectMessageEnd');
+
+      const amdTimeout = amdSensitivity === 'low' ? '3000' : amdSensitivity === 'high' ? '7000' : '5000';
+      formData.append('MachineDetectionTimeout', amdTimeout);
+      formData.append('MachineDetectionSpeechThreshold', '2500');
+      formData.append('MachineDetectionSpeechEndThreshold', '1500');
+    }
+
+    if (enableRecording) {
+      formData.append('Record', 'true');
+      formData.append('RecordingStatusCallback', `${callbackUrl}/recording`);
+      formData.append('RecordingStatusCallbackEvent', 'completed');
+    }
 
     const auth = btoa(`${accountSid}:${authToken}`);
     
@@ -104,6 +129,19 @@ Deno.serve(async (req: Request) => {
         status: callData.status,
       });
 
+    if (userEmail) {
+      await supabase
+        .from('active_calls')
+        .insert({
+          user_email: userEmail,
+          lead_id: leadId,
+          call_sid: callData.sid,
+          line_number: lineNumber,
+          status: 'initiating',
+          started_at: new Date().toISOString(),
+        });
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -111,6 +149,9 @@ Deno.serve(async (req: Request) => {
         status: callData.status,
         to: callData.to,
         from: callData.from,
+        lineNumber: lineNumber,
+        amdEnabled: enableAMD,
+        recordingEnabled: enableRecording,
       }),
       {
         headers: {

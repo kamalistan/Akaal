@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { User, Target, LogOut, Link as LinkIcon, Phone, Clock, Palette, Calendar, DollarSign } from 'lucide-react';
+import { User, Target, LogOut, Link as LinkIcon, Phone, Clock, Palette, Calendar, DollarSign, Mic, Music, MapPin, Settings as SettingsIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -262,6 +262,133 @@ export default function Settings() {
                       />
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Advanced Dialer Settings */}
+          <motion.div
+            className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <SettingsIcon className="w-5 h-5 text-purple-400" />
+              <h2 className="text-xl font-bold text-white">Advanced Dialer Settings</h2>
+            </div>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-white font-medium">Call Recording</Label>
+                  <p className="text-purple-300 text-sm mt-1">Record all calls for quality and training</p>
+                </div>
+                <Switch
+                  checked={settings.enable_call_recording}
+                  onCheckedChange={(checked) => handleSettingChange('enable_call_recording', checked)}
+                />
+              </div>
+
+              <div>
+                <Label className="text-white font-medium mb-2 block">Voicemail Detection Sensitivity</Label>
+                <select
+                  value={settings.amd_sensitivity || 'medium'}
+                  onChange={(e) => handleSettingChange('amd_sensitivity', e.target.value)}
+                  className="w-full p-2 bg-[#1a0f2e] border border-purple-500/20 rounded-xl text-white"
+                >
+                  <option value="low">Low (3 seconds)</option>
+                  <option value="medium">Medium (5 seconds)</option>
+                  <option value="high">High (7 seconds)</option>
+                </select>
+                <p className="text-purple-400 text-xs mt-2">Higher sensitivity takes longer but is more accurate</p>
+              </div>
+
+              <div>
+                <Label className="text-white font-medium mb-2 block">Voicemail Detection Action</Label>
+                <select
+                  value={settings.amd_action || 'disconnect'}
+                  onChange={(e) => handleSettingChange('amd_action', e.target.value)}
+                  className="w-full p-2 bg-[#1a0f2e] border border-purple-500/20 rounded-xl text-white"
+                >
+                  <option value="disconnect">Disconnect immediately</option>
+                  <option value="continue">Continue the call</option>
+                  <option value="notify">Notify and let me decide</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-white font-medium">Local Presence</Label>
+                  <p className="text-purple-300 text-sm mt-1">Use caller ID matching lead's area code</p>
+                </div>
+                <Switch
+                  checked={settings.local_presence_enabled}
+                  onCheckedChange={(checked) => handleSettingChange('local_presence_enabled', checked)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-white font-medium">Auto-Advance on Complete</Label>
+                  <p className="text-purple-300 text-sm mt-1">Automatically move to next lead after call</p>
+                </div>
+                <Switch
+                  checked={settings.auto_advance_on_complete !== false}
+                  onCheckedChange={(checked) => handleSettingChange('auto_advance_on_complete', checked)}
+                />
+              </div>
+
+              <div>
+                <Label className="text-white font-medium mb-2 block">Session Timeout (minutes)</Label>
+                <Input
+                  type="number"
+                  value={settings.session_timeout_minutes || 60}
+                  onChange={(e) => handleSettingChange('session_timeout_minutes', parseInt(e.target.value))}
+                  className="bg-[#1a0f2e] border-purple-500/20 text-white"
+                  min="15"
+                  max="480"
+                />
+                <p className="text-purple-400 text-xs mt-2">Inactive sessions will expire after this time</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Spotify Integration */}
+          <motion.div
+            className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <Music className="w-5 h-5 text-purple-400" />
+              <h2 className="text-xl font-bold text-white">Spotify Integration</h2>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-white font-medium">Enable Spotify</Label>
+                  <p className="text-purple-300 text-sm mt-1">Play music during dialing sessions</p>
+                </div>
+                <Switch
+                  checked={settings.spotify_enabled}
+                  onCheckedChange={(checked) => handleSettingChange('spotify_enabled', checked)}
+                />
+              </div>
+
+              {settings.spotify_enabled && (
+                <div className="pl-4 border-l-2 border-purple-500/30">
+                  <Label className="text-purple-300 text-sm mb-2 block">Playlist ID</Label>
+                  <Input
+                    value={settings.spotify_playlist_id || ''}
+                    onChange={(e) => handleSettingChange('spotify_playlist_id', e.target.value)}
+                    placeholder="37i9dQZF1DXcBWIGoYBM5M"
+                    className="bg-[#1a0f2e] border-purple-500/20 text-white"
+                  />
+                  <p className="text-purple-400 text-xs mt-2">
+                    Enter the Spotify playlist ID from your playlist URL
+                  </p>
                 </div>
               )}
             </div>

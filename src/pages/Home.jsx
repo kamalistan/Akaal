@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -10,6 +10,8 @@ import LevelProgress from '@/components/level/LevelProgress';
 import DialerModal from '@/components/dialer/DialerModal';
 import PointsPopup from '@/components/dialer/PointsPopup';
 import AIPerformanceCoach from '@/components/ai/AIPerformanceCoach';
+import SessionRecoveryModal from '@/components/dialer/SessionRecoveryModal';
+import { createSessionManager } from '@/utils/sessionManager';
 import { Link as LinkIcon, Filter, BarChart3, PhoneCall } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,10 @@ export default function Home() {
   const [showPoints, setShowPoints] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [selectedPipeline, setSelectedPipeline] = useState('all');
+  const [activeSession, setActiveSession] = useState(null);
+  const [showSessionRecovery, setShowSessionRecovery] = useState(false);
+  const [sessionLeads, setSessionLeads] = useState([]);
+  const sessionManager = useRef(null);
   const queryClient = useQueryClient();
   const { theme } = useTheme();
 
@@ -29,8 +35,21 @@ export default function Home() {
     const loadUser = async () => {
       const user = { email: 'demo@example.com' };
       setCurrentUser(user);
+      sessionManager.current = createSessionManager(user.email);
+
+      const existingSession = await sessionManager.current.getActiveSession();
+      if (existingSession) {
+        setActiveSession(existingSession);
+        setShowSessionRecovery(true);
+      }
     };
     loadUser();
+
+    return () => {
+      if (sessionManager.current) {
+        sessionManager.current.cleanup();
+      }
+    };
   }, []);
 
   // Get or create user stats
@@ -155,12 +174,42 @@ export default function Home() {
     setCurrentLead(leads[prevIndex]);
   };
 
-  const handleCallComplete = (points) => {
+  const handleCallComplete = async (points, sessionId) => {
     setShowDialer(false);
     setEarnedPoints(points);
     setShowPoints(true);
     queryClient.invalidateQueries(['userStats']);
     queryClient.invalidateQueries(['leads']);
+
+    if (sessionManager.current && sessionId) {
+      await sessionManager.current.updateSession({
+        completed_leads: (activeSession?.completed_leads || 0) + 1,
+      });
+    }
+  };
+
+  const handleResumeSession = async () => {
+    if (!activeSession || !sessionManager.current) return;
+
+    setShowSessionRecovery(false);
+
+    const leads = await sessionManager.current.getSessionLeads(activeSession);
+    setSessionLeads(leads);
+
+    const currentIndex = activeSession.current_lead_index || 0;
+    if (leads[currentIndex]) {
+      setCurrentLead(leads[currentIndex]);
+      setSelectedPipeline(activeSession.pipeline_id || 'all');
+      setShowDialer(true);
+    }
+  };
+
+  const handleDiscardSession = async () => {
+    if (sessionManager.current && activeSession) {
+      await sessionManager.current.endSession();
+    }
+    setActiveSession(null);
+    setShowSessionRecovery(false);
   };
 
   const level = userStats?.level || 1;
@@ -318,10 +367,18 @@ export default function Home() {
       </AnimatePresence>
 
       {/* Points Popup */}
-      <PointsPopup 
+      <PointsPopup
         points={earnedPoints}
         isVisible={showPoints}
         onComplete={() => setShowPoints(false)}
+      />
+
+      {/* Session Recovery Modal */}
+      <SessionRecoveryModal
+        session={activeSession}
+        onResume={handleResumeSession}
+        onDiscard={handleDiscardSession}
+        open={showSessionRecovery}
       />
     </div>
   );

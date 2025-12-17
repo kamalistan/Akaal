@@ -23,12 +23,21 @@ Deno.serve(async (req: Request) => {
     const to = formData.get('To');
     const from = formData.get('From');
 
+    const answeredBy = formData.get('AnsweredBy');
+    const machineDetectionDuration = formData.get('MachineDetectionDuration');
+
+    const recordingSid = formData.get('RecordingSid');
+    const recordingUrl = formData.get('RecordingUrl');
+    const recordingDuration = formData.get('RecordingDuration');
+
     console.log('Call Status Update:', {
       callSid,
       callStatus,
       callDuration,
       to,
       from,
+      answeredBy,
+      recordingSid,
     });
 
     const supabase = createClient(
@@ -51,6 +60,65 @@ Deno.serve(async (req: Request) => {
 
     if (error) {
       console.error('Error saving call status:', error);
+    }
+
+    if (answeredBy) {
+      const { data: callLog } = await supabase
+        .from('twilio_call_logs')
+        .select('lead_id')
+        .eq('call_sid', callSid)
+        .maybeSingle();
+
+      await supabase
+        .from('voicemail_detection_logs')
+        .insert({
+          call_sid: callSid,
+          lead_id: callLog?.lead_id,
+          user_email: 'demo@example.com',
+          amd_result: answeredBy,
+          confidence_score: machineDetectionDuration ? parseFloat(machineDetectionDuration) / 100 : null,
+          created_at: new Date().toISOString(),
+        });
+    }
+
+    if (callStatus === 'answered' || callStatus === 'in-progress') {
+      await supabase
+        .from('active_calls')
+        .update({
+          status: callStatus,
+          answered_at: new Date().toISOString(),
+        })
+        .eq('call_sid', callSid);
+    }
+
+    if (callStatus === 'completed' || callStatus === 'failed' || callStatus === 'busy' || callStatus === 'no-answer') {
+      await supabase
+        .from('active_calls')
+        .update({
+          status: callStatus,
+          ended_at: new Date().toISOString(),
+        })
+        .eq('call_sid', callSid);
+    }
+
+    if (recordingSid && recordingUrl) {
+      const { data: callLog } = await supabase
+        .from('twilio_call_logs')
+        .select('lead_id')
+        .eq('call_sid', callSid)
+        .maybeSingle();
+
+      await supabase
+        .from('call_recordings')
+        .insert({
+          call_log_id: null,
+          lead_id: callLog?.lead_id,
+          user_email: 'demo@example.com',
+          recording_sid: recordingSid,
+          recording_url: recordingUrl,
+          duration: recordingDuration ? parseInt(recordingDuration) : 0,
+          created_at: new Date().toISOString(),
+        });
     }
 
     return new Response(

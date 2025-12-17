@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Trophy, Flame, Phone, CalendarCheck, TrendingUp, Users, Target, Award, DollarSign } from 'lucide-react';
+import { Trophy, Flame, Phone, CalendarCheck, TrendingUp, Users, Target, Award, DollarSign, Star, Crown } from 'lucide-react';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
 
@@ -10,6 +10,14 @@ const rankColors = {
   0: { bg: 'bg-gradient-to-br from-yellow-400 to-amber-500', text: 'text-yellow-600', ring: 'ring-yellow-400' },
   1: { bg: 'bg-gradient-to-br from-slate-300 to-slate-400', text: 'text-slate-500', ring: 'ring-slate-300' },
   2: { bg: 'bg-gradient-to-br from-amber-600 to-orange-700', text: 'text-amber-700', ring: 'ring-amber-500' },
+};
+
+const tierColors = {
+  bronze: { bg: 'bg-gradient-to-br from-amber-700 to-orange-800', border: 'border-amber-700', text: 'text-amber-700', icon: Award },
+  silver: { bg: 'bg-gradient-to-br from-slate-300 to-slate-500', border: 'border-slate-400', text: 'text-slate-400', icon: Star },
+  gold: { bg: 'bg-gradient-to-br from-yellow-400 to-amber-500', border: 'border-yellow-500', text: 'text-yellow-500', icon: Trophy },
+  platinum: { bg: 'bg-gradient-to-br from-cyan-300 to-blue-500', border: 'border-cyan-400', text: 'text-cyan-400', icon: Crown },
+  diamond: { bg: 'bg-gradient-to-br from-blue-400 to-purple-600', border: 'border-purple-500', text: 'text-purple-400', icon: Crown },
 };
 
 export default function Leaderboard() {
@@ -73,8 +81,27 @@ export default function Leaderboard() {
     },
   });
 
+  const { data: rankings = [] } = useQuery({
+    queryKey: ['rankings'],
+    queryFn: async () => {
+      await supabase.rpc('calculate_user_rankings').catch(() => {});
+
+      const { data, error } = await supabase
+        .from('user_rankings')
+        .select()
+        .order('rank_position', { ascending: true });
+
+      if (error && error.code !== 'PGRST116') throw error;
+      return data || [];
+    },
+  });
+
   const topThree = allStats.slice(0, 3);
   const rest = allStats.slice(3);
+
+  const getRankingForUser = (email) => {
+    return rankings.find(r => r.user_email === email);
+  };
 
   // Calculate team-wide statistics
   const teamStats = {
@@ -312,13 +339,133 @@ export default function Leaderboard() {
         )}
 
         {allStats.length === 0 && (
-          <motion.div 
+          <motion.div
             className="text-center py-12"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
             <Trophy className="w-16 h-16 text-purple-500/30 mx-auto mb-4" />
             <p className="text-purple-300">Start making calls to appear on the leaderboard!</p>
+          </motion.div>
+        )}
+
+        {/* Rank Tiers Section */}
+        {rankings.length > 0 && (
+          <motion.div
+            className="mt-12"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+          >
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+              <Award className="w-6 h-6 text-purple-400" />
+              Success Ratio Rankings
+            </h2>
+            <p className="text-purple-300 text-sm mb-6">
+              Rankings based on appointment success rate. Higher tiers indicate better conversion rates.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rankings.map((ranking, index) => {
+                const tier = ranking.rank_tier || 'bronze';
+                const tierConfig = tierColors[tier];
+                const TierIcon = tierConfig.icon;
+
+                return (
+                  <motion.div
+                    key={ranking.id}
+                    className={`bg-[#2d1f4a]/50 backdrop-blur-sm rounded-xl p-4 border-2 ${tierConfig.border}`}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.8 + index * 0.05 }}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full ${tierConfig.bg} flex items-center justify-center`}>
+                          <TierIcon className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-white text-sm">
+                            {ranking.user_email?.split('@')[0]}
+                          </p>
+                          <p className={`text-xs font-bold ${tierConfig.text} uppercase`}>
+                            {tier}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-white">#{ranking.rank_position}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-purple-300">Success Rate:</span>
+                        <span className="text-sm font-bold text-emerald-400">
+                          {ranking.success_ratio || 0}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-purple-300">Total Calls:</span>
+                        <span className="text-sm font-semibold text-white">
+                          {ranking.total_calls || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-purple-300">Appointments:</span>
+                        <span className="text-sm font-semibold text-white">
+                          {ranking.successful_calls || 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-purple-500/20">
+                      <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(ranking.success_ratio || 0, 100)}%` }}
+                          transition={{ duration: 1, delay: 0.8 + index * 0.05 }}
+                          className={tierConfig.bg.replace('bg-gradient-to-br', 'bg-gradient-to-r')}
+                          style={{ height: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Tier Legend */}
+            <motion.div
+              className="mt-6 bg-[#2d1f4a]/30 backdrop-blur-sm rounded-xl p-4 border border-purple-500/20"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.2 }}
+            >
+              <p className="text-sm font-semibold text-purple-300 mb-3">Tier Requirements:</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-br from-amber-700 to-orange-800" />
+                  <span className="text-purple-200">Bronze: &lt;10%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-br from-slate-300 to-slate-500" />
+                  <span className="text-purple-200">Silver: 10-15%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500" />
+                  <span className="text-purple-200">Gold: 15-20%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-br from-cyan-300 to-blue-500" />
+                  <span className="text-purple-200">Platinum: 20-30%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-br from-blue-400 to-purple-600" />
+                  <span className="text-purple-200">Diamond: 30%+</span>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
         </div>

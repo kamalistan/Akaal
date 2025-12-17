@@ -36,6 +36,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   const [isMuted, setIsMuted] = useState(false);
   const [dialerSettings, setDialerSettings] = useState(null);
   const timerRef = useRef(null);
+  const isCallInProgressRef = useRef(false);
   const userEmail = 'demo@example.com';
 
   const { activeLines, connectedLine, hasActiveLines } = useActiveCallsSync(userEmail);
@@ -45,7 +46,8 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
       await supabase
         .from('active_calls')
         .delete()
-        .eq('user_email', userEmail);
+        .eq('user_email', userEmail)
+        .in('status', ['completed', 'failed', 'busy', 'no-answer', 'canceled', 'voicemail_detected', 'dropped_other_answered']);
 
       const success = await twilioClientManager.initialize(userEmail);
       setTwilioClientReady(true);
@@ -110,6 +112,12 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
   }, [connectedLine, callState]);
 
   const startCall = async () => {
+    if (isCallInProgressRef.current) {
+      console.log('Call already in progress, ignoring duplicate click');
+      return;
+    }
+
+    isCallInProgressRef.current = true;
     setCallState('calling');
     setCallError('');
 
@@ -138,11 +146,13 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
       } else {
         setCallError(response.error || 'Failed to initiate call');
         setCallState('ready');
+        isCallInProgressRef.current = false;
       }
     } catch (error) {
       console.error('Error starting call:', error);
       setCallError(error.message || 'Failed to initiate call');
       setCallState('ready');
+      isCallInProgressRef.current = false;
     }
   };
 
@@ -158,6 +168,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
       console.error('Error ending call:', error);
     }
 
+    isCallInProgressRef.current = false;
     setCallState('ended');
     if (timerRef.current) clearInterval(timerRef.current);
   };
@@ -366,7 +377,7 @@ export default function DialerModalNew({ lead, onClose, onComplete, onNext, onPr
             </motion.div>
           )}
 
-          {callState === 'calling' && (
+          {callState === 'calling' && !hasActiveLines && (
             <motion.div
               className="text-center py-8"
               initial={{ opacity: 0 }}

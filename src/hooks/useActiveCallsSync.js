@@ -24,11 +24,20 @@ export function useActiveCallsSync(userEmail) {
       .order('line_number', { ascending: true });
 
     if (!error && data) {
-      const enrichedLines = data.map(call => ({
-        ...call,
-        leadName: call.leads?.name,
-        to_number: call.leads?.phone,
-      }));
+      const uniqueCallSids = new Set();
+      const enrichedLines = data
+        .filter(call => {
+          if (uniqueCallSids.has(call.call_sid)) {
+            return false;
+          }
+          uniqueCallSids.add(call.call_sid);
+          return true;
+        })
+        .map(call => ({
+          ...call,
+          leadName: call.leads?.name,
+          to_number: call.leads?.phone,
+        }));
 
       setActiveLines(enrichedLines);
 

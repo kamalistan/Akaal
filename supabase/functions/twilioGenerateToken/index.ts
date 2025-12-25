@@ -110,13 +110,28 @@ Deno.serve(async (req: Request) => {
     const token = `${message}.${encodedSignature}`;
 
     console.log('Generated Twilio token for:', identity);
+    console.log('Token details:', {
+      accountSid: accountSid,
+      apiKeySid: apiKeySid,
+      identity: identity,
+      hasSecret: !!apiKeySecret,
+      secretLength: apiKeySecret?.length,
+      tokenLength: token.length,
+      payload: payload
+    });
 
     return new Response(
       JSON.stringify({
         success: true,
         token: token,
         identity: identity,
-        voiceUrl: voiceUrl
+        voiceUrl: voiceUrl,
+        debug: {
+          accountSid: accountSid,
+          apiKeySid: apiKeySid,
+          hasSecret: !!apiKeySecret,
+          secretLength: apiKeySecret?.length
+        }
       }),
       {
         headers: {

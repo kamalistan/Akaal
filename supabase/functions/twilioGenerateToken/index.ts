@@ -20,6 +20,7 @@ Deno.serve(async (req: Request) => {
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const apiKeySid = Deno.env.get('TWILIO_API_KEY_SID');
     const apiKeySecret = Deno.env.get('TWILIO_API_KEY_SECRET');
+    const twimlAppSid = Deno.env.get('TWILIO_TWIML_APP_SID');
 
     if (!accountSid || !apiKeySid || !apiKeySecret) {
       return new Response(
@@ -30,7 +31,8 @@ Deno.serve(async (req: Request) => {
           missingVars: {
             accountSid: !accountSid,
             apiKeySid: !apiKeySid,
-            apiKeySecret: !apiKeySecret
+            apiKeySecret: !apiKeySecret,
+            twimlAppSid: !twimlAppSid,
           }
         }),
         {
@@ -43,95 +45,63 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const voiceUrl = `${supabaseUrl}/functions/v1/twilioVoiceHandler`;
+    if (!twimlAppSid) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'TWILIO_TWIML_APP_SID not configured. Create a TwiML App in Twilio Console and add its SID.',
+          needsSetup: true,
+        }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
 
     const identity = userEmail || 'demo@example.com';
-    const ttl = 3600;
 
-    const header = {
-      cty: 'twilio-fpa;v=1',
-      typ: 'JWT',
-      alg: 'HS256'
-    };
+    // Import Twilio's official AccessToken and VoiceGrant
+    const { default: AccessToken } = await import('npm:twilio/lib/jwt/AccessToken.js');
+    const VoiceGrant = AccessToken.VoiceGrant;
 
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      jti: `${apiKeySid}-${now}`,
-      iss: apiKeySid,
-      sub: accountSid,
-      exp: now + ttl,
-      grants: {
-        identity: identity,
-        voice: {
-          outgoing: {
-            application_sid: 'default',
-            params: {
-              voiceUrl: voiceUrl
-            }
-          },
-          incoming: {
-            allow: true
-          }
-        }
-      }
-    };
-
-    const base64UrlEncode = (str: string) => {
-      return btoa(str)
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    };
-
-    const encodedHeader = base64UrlEncode(JSON.stringify(header));
-    const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-    const message = `${encodedHeader}.${encodedPayload}`;
-
-    const secret = apiKeySecret;
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
+    // Create Access Token with official SDK
+    const token = new AccessToken(
+      accountSid,
+      apiKeySid,
+      apiKeySecret,
+      { identity: identity, ttl: 3600 }
     );
 
-    const signature = await crypto.subtle.sign(
-      'HMAC',
-      key,
-      new TextEncoder().encode(message)
-    );
+    // Create Voice Grant with real TwiML App SID
+    const voiceGrant = new VoiceGrant({
+      outgoingApplicationSid: twimlAppSid,
+      incomingAllow: true,
+    });
 
-    const encodedSignature = base64UrlEncode(
-      String.fromCharCode(...new Uint8Array(signature))
-    );
+    // Add grant to token
+    token.addGrant(voiceGrant);
 
-    const token = `${message}.${encodedSignature}`;
+    // Generate JWT string
+    const jwtToken = token.toJwt();
 
     console.log('Generated Twilio token for:', identity);
     console.log('Token details:', {
       accountSid: accountSid,
       apiKeySid: apiKeySid,
+      twimlAppSid: twimlAppSid,
       identity: identity,
       hasSecret: !!apiKeySecret,
-      secretLength: apiKeySecret?.length,
-      tokenLength: token.length,
-      payload: payload
     });
 
     return new Response(
       JSON.stringify({
         success: true,
-        token: token,
+        token: jwtToken,
         identity: identity,
-        voiceUrl: voiceUrl,
-        debug: {
-          accountSid: accountSid,
-          apiKeySid: apiKeySid,
-          hasSecret: !!apiKeySecret,
-          secretLength: apiKeySecret?.length
-        }
       }),
       {
         headers: {

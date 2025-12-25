@@ -18,16 +18,16 @@ Deno.serve(async (req: Request) => {
   try {
     const {
       to,
-      leadId,
-      leadName,
+      leadId = null,
+      leadName = null,
       userEmail,
       lineNumber = 1,
       sessionId = null,
       mockConfig = null
     } = await req.json();
 
-    if (!to || !leadId || !userEmail) {
-      throw new Error('Missing required parameters: to, leadId, userEmail');
+    if (!to || !userEmail) {
+      throw new Error('Missing required parameters: to, userEmail');
     }
 
     const supabase = createClient(
@@ -47,11 +47,19 @@ Deno.serve(async (req: Request) => {
 
     const mockCallSid = `MOCK${Date.now()}${Math.random().toString(36).substr(2, 9)}`;
 
-    await supabase
-      .from('active_calls')
-      .delete()
-      .eq('user_email', userEmail)
-      .eq('lead_id', leadId);
+    if (leadId) {
+      await supabase
+        .from('active_calls')
+        .delete()
+        .eq('user_email', userEmail)
+        .eq('lead_id', leadId);
+    } else {
+      await supabase
+        .from('active_calls')
+        .delete()
+        .eq('user_email', userEmail)
+        .is('lead_id', null);
+    }
 
     const { data: activeCall, error: insertError } = await supabase
       .from('active_calls')
@@ -121,7 +129,7 @@ function simulateCallProgression(
   callSid: string,
   config: any,
   userEmail: string,
-  leadId: string
+  leadId: string | null
 ) {
   setTimeout(async () => {
     try {

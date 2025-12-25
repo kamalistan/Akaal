@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase, callEdgeFunction } from '@/lib/supabase';
 import { twilioClientManager } from '@/utils/twilioClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDialerCallSubscription } from '@/hooks/useDialerCallSubscription';
 import {
   formatPhoneNumber,
   validatePhoneNumber,
@@ -29,17 +30,20 @@ const DIAL_TONES = {
 
 export default function PhoneDialer({ onClose, initialNumber = '', userEmail = 'demo@example.com' }) {
   const [phoneNumber, setPhoneNumber] = useState(initialNumber);
-  const [isCallActive, setIsCallActive] = useState(false);
-  const [callStatus, setCallStatus] = useState('idle');
-  const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('dialer');
-  const [currentCallSid, setCurrentCallSid] = useState(null);
+  const [callDuration, setCallDuration] = useState(0);
 
   const audioContextRef = useRef(null);
   const timerRef = useRef(null);
   const queryClient = useQueryClient();
+
+  const { currentCall, isConnected, clearCall, updateCallStatus } = useDialerCallSubscription(userEmail);
+
+  const isCallActive = currentCall?.isActive || false;
+  const callStatus = currentCall?.status || 'idle';
+  const isCallConnected = callStatus === 'in-progress' || callStatus === 'connected';
 
   const { data: preferences } = useQuery({
     queryKey: ['dialerPreferences', userEmail],
@@ -117,49 +121,19 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     },
   });
 
-  const { data: callHistory = [] } = useQuery({
-    queryKey: ['dialerCallHistory', userEmail],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('dialer_call_history')
-        .select('*')
-        .eq('user_email', userEmail)
-        .order('started_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  const createCallHistoryMutation = useMutation({
-    mutationFn: async (callData) => {
-      const { data, error } = await supabase
-        .from('dialer_call_history')
-        .insert(callData)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['dialerCallHistory']);
-      queryClient.invalidateQueries(['recentNumbers']);
-    },
-  });
-
   useEffect(() => {
-    if (isCallActive && callStatus === 'connected') {
-      timerRef.current = setInterval(() => {
-        setCallDuration(d => d + 1);
-      }, 1000);
+    if (isCallConnected) {
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => {
+          setCallDuration(d => d + 1);
+        }, 1000);
+      }
     } else {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      if (callStatus === 'idle') {
+      if (callStatus === 'idle' || !currentCall) {
         setCallDuration(0);
       }
     }
@@ -167,17 +141,10 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
-  }, [isCallActive, callStatus]);
-
-  useEffect(() => {
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
-  }, []);
+  }, [isCallConnected, callStatus, currentCall]);
 
   const playDialTone = useCallback((digit) => {
     if (!preferences?.enable_dial_tones) return;
@@ -187,21 +154,21 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       }
 
-      const ctx = audioContextRef.current;
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
+      const context = audioContextRef.current;
+      const oscillator = context.createOscillator();
+      const gainNode = context.createGain();
 
       oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      gainNode.connect(context.destination);
 
-      oscillator.frequency.value = DIAL_TONES[digit] || 697;
+      oscillator.frequency.value = DIAL_TONES[digit] || 770;
       oscillator.type = 'sine';
 
-      gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0.3, context.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
 
-      oscillator.start(ctx.currentTime);
-      oscillator.stop(ctx.currentTime + 0.1);
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.1);
     } catch (error) {
       console.error('Error playing dial tone:', error);
     }
@@ -239,18 +206,6 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     const useMockMode = dialerSettings?.use_mock_dialer || false;
 
     try {
-      setIsCallActive(true);
-      setCallStatus('dialing');
-      setCallDuration(0);
-
-      const historyEntry = await createCallHistoryMutation.mutateAsync({
-        user_email: userEmail,
-        phone_number: normalized,
-        direction: 'outbound',
-        status: 'initiated',
-        started_at: new Date().toISOString(),
-      });
-
       if (useMockMode) {
         toast.info('Demo Mode: Simulating call...');
 
@@ -265,52 +220,40 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
         if (!response.success) {
           throw new Error(response.error || 'Failed to initiate call');
         }
+      } else {
+        const response = await callEdgeFunction('twilioInitiateCall', {
+          to: normalized,
+          userEmail: userEmail,
+          leadId: null,
+          leadName: null,
+          lineNumber: 1,
+        });
 
-        setCurrentCallSid(response.callSid);
-        setCallStatus('ringing');
+        if (response.needsSetup) {
+          toast.error('Twilio not configured. Enable Demo Mode in Settings to test.');
+          return;
+        }
 
-        setTimeout(() => {
-          setCallStatus('connected');
-          toast.success('Demo call connected');
-        }, 2000);
+        if (!response.success) {
+          throw new Error(response.error || 'Failed to initiate call');
+        }
 
-        return;
+        twilioClientManager.onCallAnswered(() => {
+          console.log('Twilio call answered');
+        });
+
+        twilioClientManager.onCallEnded(async () => {
+          await endCall();
+        });
+
+        twilioClientManager.onCallError((error) => {
+          toast.error(`Call error: ${error.message}`);
+          endCall();
+        });
       }
-
-      const response = await callEdgeFunction('twilioInitiateCall', {
-        to: normalized,
-        userEmail: userEmail,
-        leadId: null,
-        leadName: null,
-        lineNumber: 1,
-      });
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to initiate call');
-      }
-
-      setCurrentCallSid(response.callSid);
-      setCallStatus('ringing');
-
-      twilioClientManager.onCallAnswered(() => {
-        setCallStatus('connected');
-        toast.success('Call connected');
-      });
-
-      twilioClientManager.onCallEnded(async () => {
-        await endCall();
-      });
-
-      twilioClientManager.onCallError((error) => {
-        toast.error(`Call error: ${error.message}`);
-        endCall();
-      });
-
     } catch (error) {
       console.error('Error initiating call:', error);
       toast.error(error.message || 'Failed to start call');
-      setIsCallActive(false);
-      setCallStatus('idle');
     }
   };
 
@@ -318,9 +261,9 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     const useMockMode = dialerSettings?.use_mock_dialer || false;
 
     try {
-      if (currentCallSid && !useMockMode) {
+      if (currentCall?.call_sid && !useMockMode) {
         await callEdgeFunction('twilioEndCall', {
-          callSid: currentCallSid,
+          callSid: currentCall.call_sid,
           userEmail: userEmail,
         });
       }
@@ -329,33 +272,20 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
         twilioClientManager.disconnectCall();
       }
 
-      const normalized = normalizePhoneNumber(phoneNumber, preferences?.default_country_code);
-
-      await supabase
-        .from('dialer_call_history')
-        .update({
-          status: 'completed',
-          duration: callDuration,
-          ended_at: new Date().toISOString(),
-        })
-        .eq('user_email', userEmail)
-        .eq('phone_number', normalized)
-        .is('ended_at', null);
-
-      queryClient.invalidateQueries(['dialerCallHistory']);
+      await updateCallStatus('ended', { ended_at: new Date().toISOString() });
 
       if (useMockMode) {
         toast.success('Demo call ended');
       }
 
+      await queryClient.invalidateQueries(['recentNumbers']);
     } catch (error) {
       console.error('Error ending call:', error);
-    } finally {
-      setIsCallActive(false);
-      setCallStatus('idle');
-      setCallDuration(0);
-      setCurrentCallSid(null);
-      setIsMuted(false);
+    }
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
   };
 
@@ -382,19 +312,22 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     setActiveTab('dialer');
   };
 
-  const filteredFavorites = favorites.filter(fav =>
-    fav.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    fav.phone_number.includes(searchTerm)
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const filteredRecentNumbers = recentNumbers.filter(item =>
+    item.phone_number.includes(searchTerm) ||
+    (item.contact_name && item.contact_name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const filteredHistory = callHistory.filter(call =>
-    (call.contact_name?.toLowerCase().includes(searchTerm.toLowerCase()) || '') ||
-    call.phone_number.includes(searchTerm)
-  );
+  if (!onClose) return null;
 
   return (
     <motion.div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -436,218 +369,177 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
                 <Star className="w-4 h-4 mr-2" />
                 Favorites
               </TabsTrigger>
-              <TabsTrigger value="history">
+              <TabsTrigger value="recent">
                 <Clock className="w-4 h-4 mr-2" />
-                History
+                Recent
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="dialer" className="space-y-6">
-              <div className="text-center">
-                <div className="mb-4 min-h-[60px] flex items-center justify-center">
-                  {isCallActive ? (
-                    <div className="space-y-2">
-                      <div className="text-sm text-slate-600 capitalize">{callStatus}</div>
-                      {callStatus === 'connected' && (
-                        <div className="text-3xl font-mono font-bold text-slate-800">
-                          {getCallDurationFormatted(callDuration)}
-                        </div>
-                      )}
+            <TabsContent value="dialer" className="space-y-4">
+              {isCallActive ? (
+                <div className="py-8 text-center space-y-6">
+                  <div className="flex items-center justify-center">
+                    <div className={`
+                      w-20 h-20 rounded-full flex items-center justify-center
+                      ${isCallConnected ? 'bg-green-100' : 'bg-blue-100'}
+                    `}>
+                      <Phone className={`w-10 h-10 ${isCallConnected ? 'text-green-600' : 'text-blue-600 animate-pulse'}`} />
                     </div>
-                  ) : (
-                    <div className="text-3xl font-mono font-semibold text-slate-800 tracking-wider">
-                      {formatPhoneNumber(phoneNumber, preferences?.number_format_preference) || ' '}
+                  </div>
+
+                  <div>
+                    <p className="text-lg font-medium text-slate-700">{formatPhoneNumber(phoneNumber)}</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {currentCall?.statusInfo?.label || callStatus}
+                    </p>
+                  </div>
+
+                  {isCallConnected && (
+                    <div className="text-3xl font-mono font-bold text-slate-700">
+                      {formatTime(callDuration)}
                     </div>
                   )}
-                </div>
 
-                {!isCallActive && phoneNumber && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClear}
-                    className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-
-              {!isCallActive ? (
-                <div className="grid grid-cols-3 gap-4">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((digit) => (
-                    <motion.button
-                      key={digit}
-                      onClick={() => handleNumberInput(digit)}
-                      className="aspect-square rounded-2xl bg-slate-100 hover:bg-slate-200 text-2xl font-semibold text-slate-800 transition-all active:scale-95"
-                      whileTap={{ scale: 0.95 }}
-                      aria-label={`Dial ${digit}`}
-                    >
-                      {digit}
-                    </motion.button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-4 py-8">
-                  <Button
-                    onClick={toggleMute}
-                    variant="outline"
-                    size="lg"
-                    className="rounded-full h-16 w-16"
-                    aria-label={isMuted ? 'Unmute' : 'Mute'}
-                  >
-                    {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex gap-3 justify-center">
-                {!isCallActive ? (
-                  <>
-                    {phoneNumber && (
+                  <div className="flex justify-center gap-4 pt-4">
+                    {isCallConnected && (
                       <Button
+                        onClick={toggleMute}
                         variant="outline"
                         size="lg"
-                        onClick={handleBackspace}
-                        className="rounded-full h-14 w-14"
-                        aria-label="Backspace"
+                        className="rounded-full w-14 h-14 p-0"
                       >
-                        <Delete className="w-5 h-5" />
+                        {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
                       </Button>
                     )}
                     <Button
-                      onClick={initiateCall}
-                      disabled={!phoneNumber}
+                      onClick={endCall}
                       size="lg"
-                      className="rounded-full h-14 px-8 bg-green-600 hover:bg-green-700 text-white shadow-lg disabled:opacity-50"
-                      aria-label="Call"
+                      className="rounded-full w-14 h-14 p-0 bg-red-500 hover:bg-red-600"
                     >
-                      <Phone className="w-5 h-5 mr-2" />
-                      Call
+                      <PhoneOff className="w-6 h-6" />
                     </Button>
-                  </>
-                ) : (
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-slate-100 rounded-2xl p-4 min-h-[60px] flex items-center justify-center">
+                    <input
+                      type="tel"
+                      value={formatPhoneNumber(phoneNumber)}
+                      readOnly
+                      placeholder="Enter number"
+                      className="bg-transparent text-2xl font-medium text-center w-full outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((digit) => (
+                      <button
+                        key={digit}
+                        onClick={() => handleNumberInput(digit)}
+                        className="aspect-square rounded-2xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 transition-colors text-xl font-semibold text-slate-700"
+                      >
+                        {digit}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleBackspace}
+                      variant="outline"
+                      className="flex-1 rounded-xl"
+                      disabled={!phoneNumber}
+                    >
+                      <Delete className="w-4 h-4 mr-2" />
+                      Backspace
+                    </Button>
+                    <Button
+                      onClick={handleClear}
+                      variant="outline"
+                      className="rounded-xl px-4"
+                      disabled={!phoneNumber}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+
                   <Button
-                    onClick={endCall}
-                    size="lg"
-                    className="rounded-full h-14 px-8 bg-red-600 hover:bg-red-700 text-white shadow-lg"
-                    aria-label="End call"
+                    onClick={initiateCall}
+                    className="w-full h-14 rounded-2xl bg-green-500 hover:bg-green-600 text-white text-lg font-semibold"
+                    disabled={!phoneNumber}
                   >
-                    <PhoneOff className="w-5 h-5 mr-2" />
-                    End Call
+                    <Phone className="w-5 h-5 mr-2" />
+                    Call
                   </Button>
-                )}
-              </div>
+                </>
+              )}
             </TabsContent>
 
-            <TabsContent value="favorites" className="space-y-4">
+            <TabsContent value="favorites" className="space-y-3">
+              {favorites.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <Star className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                  <p>No favorites yet</p>
+                </div>
+              ) : (
+                favorites.map((fav) => (
+                  <div
+                    key={fav.id}
+                    onClick={() => handleCallFromHistory(fav.phone_number)}
+                    className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                      <User className="w-5 h-5 text-slate-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-700">{fav.contact_name || 'Unknown'}</p>
+                      <p className="text-sm text-slate-500">{formatPhoneNumber(fav.phone_number)}</p>
+                    </div>
+                    <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                  </div>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="recent" className="space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
-                  placeholder="Search favorites..."
+                  placeholder="Search recent calls..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 rounded-xl"
                 />
               </div>
 
-              <div className="max-h-[400px] overflow-y-auto space-y-2">
-                {filteredFavorites.length === 0 ? (
+              <div className="max-h-80 overflow-y-auto space-y-2">
+                {filteredRecentNumbers.length === 0 ? (
                   <div className="text-center py-12 text-slate-500">
-                    <Star className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-                    <p>No favorites yet</p>
-                    <p className="text-sm mt-1">Add contacts to quickly dial them</p>
+                    <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                    <p>{searchTerm ? 'No matching calls' : 'No recent calls'}</p>
                   </div>
                 ) : (
-                  filteredFavorites.map((favorite) => (
-                    <motion.div
-                      key={favorite.id}
-                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
-                      onClick={() => handleCallFromHistory(favorite.phone_number)}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-semibold">
-                        {getContactInitials(favorite.name)}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-800">{favorite.name}</div>
-                        <div className="text-sm text-slate-500">{formatPhoneNumber(favorite.phone_number)}</div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPhoneNumber(extractDigits(favorite.phone_number));
-                          initiateCall();
-                        }}
-                        className="rounded-full"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </Button>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="history" className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  placeholder="Search history..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-
-              <div className="max-h-[400px] overflow-y-auto space-y-2">
-                {filteredHistory.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
-                    <Clock className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-                    <p>No call history</p>
-                  </div>
-                ) : (
-                  filteredHistory.map((call) => (
-                    <motion.div
+                  filteredRecentNumbers.map((call) => (
+                    <div
                       key={call.id}
-                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
                       onClick={() => handleCallFromHistory(call.phone_number)}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                      className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
                     >
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        call.direction === 'inbound' ? 'bg-blue-100' : 'bg-green-100'
-                      }`}>
-                        <Phone className={`w-5 h-5 ${
-                          call.direction === 'inbound' ? 'text-blue-600' : 'text-green-600'
-                        } ${call.direction === 'inbound' ? 'rotate-180' : ''}`} />
+                      <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                        <span className="text-sm font-medium text-slate-600">
+                          {getContactInitials(call.contact_name)}
+                        </span>
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium text-slate-800">
+                        <p className="font-medium text-slate-700">
                           {call.contact_name || formatPhoneNumber(call.phone_number)}
-                        </div>
-                        <div className="text-sm text-slate-500">
-                          {call.duration > 0 ? getCallDurationFormatted(call.duration) : 'Missed'}
-                          {' • '}
-                          {new Date(call.started_at).toLocaleDateString()}
-                        </div>
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          {new Date(call.last_called_at).toLocaleString()}
+                        </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPhoneNumber(extractDigits(call.phone_number));
-                          setActiveTab('dialer');
-                        }}
-                        className="rounded-full"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </Button>
-                    </motion.div>
+                    </div>
                   ))
                 )}
               </div>

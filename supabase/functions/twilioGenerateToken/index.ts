@@ -18,14 +18,20 @@ Deno.serve(async (req: Request) => {
     const { userEmail } = await req.json();
 
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-    const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+    const apiKeySid = Deno.env.get('TWILIO_API_KEY_SID');
+    const apiKeySecret = Deno.env.get('TWILIO_API_KEY_SECRET');
 
-    if (!accountSid || !authToken) {
+    if (!accountSid || !apiKeySid || !apiKeySecret) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'Twilio not configured',
-          needsSetup: true
+          error: 'Twilio not configured. Please add TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, and TWILIO_API_KEY_SECRET to Edge Function secrets.',
+          needsSetup: true,
+          missingVars: {
+            accountSid: !accountSid,
+            apiKeySid: !apiKeySid,
+            apiKeySecret: !apiKeySecret
+          }
         }),
         {
           status: 200,
@@ -51,8 +57,8 @@ Deno.serve(async (req: Request) => {
 
     const now = Math.floor(Date.now() / 1000);
     const payload = {
-      jti: `${accountSid}-${now}`,
-      iss: accountSid,
+      jti: `${apiKeySid}-${now}`,
+      iss: apiKeySid,
       sub: accountSid,
       exp: now + ttl,
       grants: {
@@ -82,7 +88,7 @@ Deno.serve(async (req: Request) => {
     const encodedPayload = base64UrlEncode(JSON.stringify(payload));
     const message = `${encodedHeader}.${encodedPayload}`;
 
-    const secret = authToken;
+    const secret = apiKeySecret;
     const key = await crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(secret),

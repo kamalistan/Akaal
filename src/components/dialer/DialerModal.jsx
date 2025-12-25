@@ -148,23 +148,32 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
         }
       } else {
         console.log('Using real Twilio dialer');
-        const response = await callEdgeFunction('twilioInitiateCall', {
-          to: lead.phone,
-          leadId: lead.id,
-          leadName: lead.name,
-          userEmail: userEmail,
-          lineNumber: 1,
-          enableAMD: dialerSettings?.auto_detect_voicemail || false,
-          amdSensitivity: dialerSettings?.amd_sensitivity || 'medium',
-          enableRecording: dialerSettings?.enable_call_recording || false,
-          sessionId: sessionId,
+
+        if (!twilioClientReady || !hasAudioDevices) {
+          const initialized = await twilioClientManager.initialize(userEmail);
+          if (!initialized) {
+            setCallError('Twilio not configured. Enable Demo Mode in Settings to test without Twilio.');
+            return;
+          }
+          setTwilioClientReady(true);
+          setHasAudioDevices(true);
+        }
+
+        twilioClientManager.onCallAnswered(() => {
+          console.log('Twilio call connected in DialerModal');
         });
 
-        if (response.needsSetup) {
-          setCallError('Twilio not configured. Enable Demo Mode in Settings to test without Twilio.');
-        } else if (!response.success) {
-          throw new Error(response.error || 'Failed to initiate call');
-        }
+        twilioClientManager.onCallError((error) => {
+          console.error('Twilio call error:', error);
+          setCallError(`Call error: ${error.message || 'Unknown error'}`);
+        });
+
+        await twilioClientManager.makeCall(lead.phone, {
+          userEmail: userEmail,
+          leadId: lead.id,
+          leadName: lead.name,
+          sessionId: sessionId,
+        });
       }
     } catch (error) {
       console.error('Error starting call:', error);
@@ -174,11 +183,7 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
 
   const endCall = async () => {
     try {
-      if (!currentCall?.is_mock) {
-        await callEdgeFunction('twilioEndCall', {
-          callSid: currentCall?.call_sid,
-          userEmail: userEmail,
-        });
+      if (!currentCall?.is_mock && twilioClientManager.hasActiveCall()) {
         twilioClientManager.disconnectCall();
       }
 
@@ -196,12 +201,8 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
 
   const cancelCall = async () => {
     try {
-      if (currentCall?.call_sid && !currentCall?.is_mock) {
-        await callEdgeFunction('twilioEndCall', {
-          callSid: currentCall.call_sid,
-          userEmail: userEmail,
-          leadId: lead.id
-        });
+      if (!currentCall?.is_mock && twilioClientManager.hasActiveCall()) {
+        twilioClientManager.disconnectCall();
       }
 
       await clearCall();

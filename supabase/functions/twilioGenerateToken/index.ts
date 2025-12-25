@@ -37,6 +37,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const voiceUrl = `${supabaseUrl}/functions/v1/twilioVoiceHandler`;
+
     const identity = userEmail || 'demo@example.com';
     const ttl = 3600;
 
@@ -56,7 +59,10 @@ Deno.serve(async (req: Request) => {
         identity: identity,
         voice: {
           outgoing: {
-            application_sid: accountSid
+            application_sid: 'default',
+            params: {
+              voiceUrl: voiceUrl
+            }
           },
           incoming: {
             allow: true
@@ -97,11 +103,14 @@ Deno.serve(async (req: Request) => {
 
     const token = `${message}.${encodedSignature}`;
 
+    console.log('Generated Twilio token for:', identity);
+
     return new Response(
       JSON.stringify({
         success: true,
         token: token,
         identity: identity,
+        voiceUrl: voiceUrl
       }),
       {
         headers: {

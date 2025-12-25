@@ -167,6 +167,73 @@ class TwilioClientManager {
     return false;
   }
 
+  async makeCall(phoneNumber, params = {}) {
+    if (!this.device || !this.isInitialized) {
+      throw new Error('Twilio Device not initialized. Call initialize() first.');
+    }
+
+    if (this.activeCall) {
+      throw new Error('Another call is already in progress');
+    }
+
+    try {
+      const callParams = {
+        To: phoneNumber,
+        ...params
+      };
+
+      console.log('Making call with Device SDK:', callParams);
+
+      const call = await this.device.connect({ params: callParams });
+      this.activeCall = call;
+
+      call.on('accept', () => {
+        console.log('Outbound call accepted (connected to Twilio)');
+      });
+
+      call.on('ringing', () => {
+        console.log('Call is ringing');
+      });
+
+      call.on('connect', () => {
+        console.log('Call connected (other party answered)');
+        if (this.onCallAnsweredCallback) {
+          this.onCallAnsweredCallback(call);
+        }
+      });
+
+      call.on('disconnect', () => {
+        console.log('Call disconnected');
+        this.activeCall = null;
+        if (this.onCallEndedCallback) {
+          this.onCallEndedCallback();
+        }
+      });
+
+      call.on('cancel', () => {
+        console.log('Call canceled');
+        this.activeCall = null;
+        if (this.onCallEndedCallback) {
+          this.onCallEndedCallback();
+        }
+      });
+
+      call.on('error', (error) => {
+        console.error('Call error:', error);
+        this.activeCall = null;
+        if (this.onCallErrorCallback) {
+          this.onCallErrorCallback(error);
+        }
+      });
+
+      return call;
+    } catch (error) {
+      console.error('Error making call:', error);
+      this.activeCall = null;
+      throw error;
+    }
+  }
+
   disconnectCall() {
     if (this.activeCall) {
       this.activeCall.disconnect();

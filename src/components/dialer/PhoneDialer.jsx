@@ -221,25 +221,16 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
           throw new Error(response.error || 'Failed to initiate call');
         }
       } else {
-        const response = await callEdgeFunction('twilioInitiateCall', {
-          to: normalized,
-          userEmail: userEmail,
-          leadId: null,
-          leadName: null,
-          lineNumber: 1,
-        });
-
-        if (response.needsSetup) {
-          toast.error('Twilio not configured. Enable Demo Mode in Settings to test.');
-          return;
-        }
-
-        if (!response.success) {
-          throw new Error(response.error || 'Failed to initiate call');
+        if (!twilioClientManager.isReady()) {
+          const initialized = await twilioClientManager.initialize(userEmail);
+          if (!initialized) {
+            toast.error('Twilio not configured. Enable Demo Mode in Settings to test.');
+            return;
+          }
         }
 
         twilioClientManager.onCallAnswered(() => {
-          console.log('Twilio call answered');
+          console.log('Twilio call connected');
         });
 
         twilioClientManager.onCallEnded(async () => {
@@ -250,6 +241,14 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
           toast.error(`Call error: ${error.message}`);
           endCall();
         });
+
+        await twilioClientManager.makeCall(normalized, {
+          userEmail: userEmail,
+          leadId: null,
+          leadName: null,
+        });
+
+        toast.success('Calling...');
       }
     } catch (error) {
       console.error('Error initiating call:', error);
@@ -261,14 +260,7 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
     const useMockMode = dialerSettings?.use_mock_dialer || false;
 
     try {
-      if (currentCall?.call_sid && !useMockMode) {
-        await callEdgeFunction('twilioEndCall', {
-          callSid: currentCall.call_sid,
-          userEmail: userEmail,
-        });
-      }
-
-      if (!useMockMode) {
+      if (!useMockMode && twilioClientManager.hasActiveCall()) {
         twilioClientManager.disconnectCall();
       }
 

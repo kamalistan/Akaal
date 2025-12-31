@@ -25,10 +25,17 @@ Deno.serve(async (req: Request) => {
     const userEmail = formData.get('userEmail');
     const sessionId = formData.get('sessionId');
 
-    console.log('Voice handler called:', { to, from, callSid, leadId, userEmail });
+    console.log('[twilioVoiceHandler] Voice handler called:', { to, from, callSid, leadId, userEmail });
 
     const twilioNumber = Deno.env.get('TWILIO_NUMBER');
+
+    // Safe env check
+    console.log('[twilioVoiceHandler] Environment check:', {
+      twilioNumber: !!twilioNumber,
+    });
+
     if (!twilioNumber) {
+      console.error('[twilioVoiceHandler] TWILIO_NUMBER not configured');
       throw new Error('Twilio number not configured');
     }
 

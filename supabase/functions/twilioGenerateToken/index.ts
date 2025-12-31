@@ -22,12 +22,29 @@ Deno.serve(async (req: Request) => {
     const apiKeySecret = Deno.env.get('TWILIO_API_KEY_SECRET');
     const twimlAppSid = Deno.env.get('TWILIO_TWIML_APP_SID');
 
+    // Safe env check - never logs actual values
+    const envCheck = {
+      accountSid: !!accountSid,
+      apiKeySid: !!apiKeySid,
+      apiKeySecret: !!apiKeySecret,
+      twimlAppSid: !!twimlAppSid,
+    };
+
+    console.log('[twilioGenerateToken] Environment check:', JSON.stringify(envCheck));
+
     if (!accountSid || !apiKeySid || !apiKeySecret) {
+      console.error('[twilioGenerateToken] Missing required variables:', {
+        accountSid: !accountSid,
+        apiKeySid: !apiKeySid,
+        apiKeySecret: !apiKeySecret,
+      });
+
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'Twilio not configured. Please add TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, and TWILIO_API_KEY_SECRET to Edge Function secrets.',
+          error: 'Twilio not configured. Enable Demo Mode in Settings to test without Twilio.',
           needsSetup: true,
+          debug: envCheck,
           missingVars: {
             accountSid: !accountSid,
             apiKeySid: !apiKeySid,

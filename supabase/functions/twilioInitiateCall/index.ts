@@ -32,12 +32,33 @@ Deno.serve(async (req: Request) => {
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioNumber = Deno.env.get('TWILIO_NUMBER');
 
+    // Safe env check - never logs actual values
+    const envCheck = {
+      accountSid: !!accountSid,
+      authToken: !!authToken,
+      twilioNumber: !!twilioNumber,
+    };
+
+    console.log('[twilioInitiateCall] Environment check:', JSON.stringify(envCheck));
+
     if (!accountSid || !authToken || !twilioNumber) {
+      console.error('[twilioInitiateCall] Missing required variables:', {
+        accountSid: !accountSid,
+        authToken: !authToken,
+        twilioNumber: !twilioNumber,
+      });
+
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'Twilio not configured. Please add your Twilio credentials to enable calling.',
-          needsSetup: true
+          error: 'Twilio not configured. Enable Demo Mode in Settings to test without Twilio.',
+          needsSetup: true,
+          debug: envCheck,
+          missingVars: {
+            accountSid: !accountSid,
+            authToken: !authToken,
+            twilioNumber: !twilioNumber,
+          }
         }),
         {
           status: 200,

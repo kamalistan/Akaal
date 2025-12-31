@@ -24,9 +24,26 @@ class TwilioClientManager {
 
       if (!response.success || !response.token) {
         console.warn('Twilio not configured:', response.error || 'Unknown error');
+
+        // Log debug info showing which env vars are present/missing
+        if (response.debug) {
+          console.group('🔍 Twilio Environment Variables Debug');
+          console.log('Environment check at runtime:', response.debug);
+          const missing = Object.entries(response.debug)
+            .filter(([_, present]) => !present)
+            .map(([key]) => key);
+          if (missing.length > 0) {
+            console.error('❌ Missing variables:', missing.join(', '));
+          } else {
+            console.log('✅ All variables present');
+          }
+          console.groupEnd();
+        }
+
         if (response.missingVars) {
           console.warn('Missing Twilio environment variables:', response.missingVars);
         }
+
         this.lastError = response.error || 'Twilio not configured';
         this.missingConfig = response.missingVars || null;
         return false;

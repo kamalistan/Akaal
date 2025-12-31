@@ -5,18 +5,31 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export async function callEdgeFunction(functionName, payload = {}) {
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/${functionName}`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    }
-  );
+export async function callEdgeFunction(functionName, payload = {}, options = {}) {
+  const method = options.method || 'POST';
+  const params = options.params || {};
+
+  // Build URL with query params for GET requests
+  let url = `${supabaseUrl}/functions/v1/${functionName}`;
+  if (method === 'GET' && Object.keys(params).length > 0) {
+    const searchParams = new URLSearchParams(params);
+    url += `?${searchParams.toString()}`;
+  }
+
+  const fetchOptions = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${supabaseAnonKey}`,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  // Only add body for non-GET requests
+  if (method !== 'GET' && Object.keys(payload).length > 0) {
+    fetchOptions.body = JSON.stringify(payload);
+  }
+
+  const response = await fetch(url, fetchOptions);
 
   if (!response.ok) {
     const error = await response.text();

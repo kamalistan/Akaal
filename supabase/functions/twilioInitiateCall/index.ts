@@ -24,7 +24,7 @@ Deno.serve(async (req: Request) => {
       lineNumber = 1,
       enableAMD = false,
       amdSensitivity = 'medium',
-      enableRecording = false,
+      enableRecording,
       sessionId = null
     } = await req.json();
 
@@ -32,7 +32,6 @@ Deno.serve(async (req: Request) => {
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioNumber = Deno.env.get('TWILIO_NUMBER');
 
-    // Safe env check - never logs actual values
     const envCheck = {
       accountSid: !!accountSid,
       authToken: !!authToken,
@@ -79,6 +78,17 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    let shouldRecord = enableRecording;
+    if (shouldRecord === undefined && userEmail) {
+      const { data: settings } = await supabase
+        .from('dialer_settings')
+        .select('enable_call_recording')
+        .eq('user_email', userEmail)
+        .maybeSingle();
+
+      shouldRecord = settings?.enable_call_recording || false;
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const callbackUrl = `${supabaseUrl}/functions/v1/twilioCallStatus`;
 
@@ -92,17 +102,18 @@ Deno.serve(async (req: Request) => {
 
     if (enableAMD) {
       formData.append('MachineDetection', 'DetectMessageEnd');
-
       const amdTimeout = amdSensitivity === 'low' ? '3000' : amdSensitivity === 'high' ? '7000' : '5000';
       formData.append('MachineDetectionTimeout', amdTimeout);
       formData.append('MachineDetectionSpeechThreshold', '2500');
       formData.append('MachineDetectionSpeechEndThreshold', '1500');
     }
 
-    if (enableRecording) {
+    if (shouldRecord) {
       formData.append('Record', 'record-from-answer');
-      formData.append('RecordingStatusCallback', `${callbackUrl}/recording`);
+      formData.append('RecordingStatusCallback', `${supabaseUrl}/functions/v1/twilioRecordingCallback`);
       formData.append('RecordingStatusCallbackEvent', 'completed');
+      formData.append('RecordingStatusCallbackMethod', 'POST');
+      console.log('[twilioInitiateCall] Call recording enabled');
     }
 
     const auth = btoa(`${accountSid}:${authToken}`);
@@ -169,7 +180,7 @@ Deno.serve(async (req: Request) => {
         leadName: leadName,
         sessionId: sessionId,
         amdEnabled: enableAMD,
-        recordingEnabled: enableRecording,
+        recordingEnabled: shouldRecord,
       }),
       {
         headers: {

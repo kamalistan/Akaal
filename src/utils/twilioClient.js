@@ -9,6 +9,8 @@ class TwilioClientManager {
     this.onCallAnsweredCallback = null;
     this.onCallEndedCallback = null;
     this.onCallErrorCallback = null;
+    this.lastError = null;
+    this.missingConfig = null;
   }
 
   async initialize(userEmail = 'demo@example.com') {
@@ -21,7 +23,12 @@ class TwilioClientManager {
       const response = await callEdgeFunction('twilioGenerateToken', { userEmail });
 
       if (!response.success || !response.token) {
-        console.warn('Twilio not configured, skipping client initialization');
+        console.warn('Twilio not configured:', response.error || 'Unknown error');
+        if (response.missingVars) {
+          console.warn('Missing Twilio environment variables:', response.missingVars);
+        }
+        this.lastError = response.error || 'Twilio not configured';
+        this.missingConfig = response.missingVars || null;
         return false;
       }
 
@@ -275,6 +282,14 @@ class TwilioClientManager {
 
   hasActiveCall() {
     return this.activeCall !== null;
+  }
+
+  getLastError() {
+    return this.lastError;
+  }
+
+  getMissingConfig() {
+    return this.missingConfig;
   }
 }
 

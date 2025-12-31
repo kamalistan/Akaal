@@ -152,7 +152,19 @@ export default function DialerModal({ lead, onClose, onComplete, onNext, onPrev,
         if (!twilioClientReady || !hasAudioDevices) {
           const initialized = await twilioClientManager.initialize(userEmail);
           if (!initialized) {
-            setCallError('Twilio not configured. Enable Demo Mode in Settings to test without Twilio.');
+            const errorMsg = twilioClientManager.getLastError();
+            const missingConfig = twilioClientManager.getMissingConfig();
+
+            if (missingConfig) {
+              const missing = Object.entries(missingConfig)
+                .filter(([_, isMissing]) => isMissing)
+                .map(([key]) => key)
+                .join(', ');
+              setCallError(`Twilio Setup Required: Missing configuration - ${missing}. Enable Demo Mode in Settings to test without Twilio.`);
+              console.error('Missing Twilio configuration:', missingConfig);
+            } else {
+              setCallError(errorMsg || 'Twilio not configured. Enable Demo Mode in Settings to test without Twilio.');
+            }
             return;
           }
           setTwilioClientReady(true);

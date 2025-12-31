@@ -224,7 +224,19 @@ export default function PhoneDialer({ onClose, initialNumber = '', userEmail = '
         if (!twilioClientManager.isReady()) {
           const initialized = await twilioClientManager.initialize(userEmail);
           if (!initialized) {
-            toast.error('Twilio not configured. Enable Demo Mode in Settings to test.');
+            const errorMsg = twilioClientManager.getLastError();
+            const missingConfig = twilioClientManager.getMissingConfig();
+
+            if (missingConfig) {
+              const missing = Object.entries(missingConfig)
+                .filter(([_, isMissing]) => isMissing)
+                .map(([key]) => key)
+                .join(', ');
+              toast.error(`Twilio Setup Required: Missing ${missing}`, { duration: 5000 });
+              console.error('Missing Twilio configuration:', missingConfig);
+            } else {
+              toast.error(errorMsg || 'Twilio not configured. Enable Demo Mode in Settings to test.');
+            }
             return;
           }
         }

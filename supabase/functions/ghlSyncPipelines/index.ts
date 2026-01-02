@@ -122,6 +122,7 @@ Deno.serve(async (req: Request) => {
     await supabase
       .from('ghl_sync_log')
       .insert({
+        user_email: userEmail,
         sync_type: 'pipelines',
         status: 'completed',
         records_processed: pipelines.length,

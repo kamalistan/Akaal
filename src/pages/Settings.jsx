@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/navigation/AppHeader';
 import TabNav from '@/components/navigation/TabNav';
+import { GHLConnection } from '@/components/settings/GHLConnection';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -169,12 +170,29 @@ export default function Settings() {
             </div>
           </motion.div>
 
+          {/* GHL Integration */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <GHLConnection
+              userEmail={currentUser?.email}
+              onConnectionChange={(connected) => {
+                if (connected) {
+                  queryClient.invalidateQueries(['pipelines']);
+                  queryClient.invalidateQueries(['leads']);
+                }
+              }}
+            />
+          </motion.div>
+
           {/* Dialer Settings */}
           <motion.div
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            transition={{ delay: 0.15 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <Phone className="w-5 h-5 text-purple-400" />
@@ -291,7 +309,7 @@ export default function Settings() {
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
+            transition={{ delay: 0.2 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <SettingsIcon className="w-5 h-5 text-purple-400" />
@@ -378,7 +396,7 @@ export default function Settings() {
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
+            transition={{ delay: 0.25 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <Music className="w-5 h-5 text-purple-400" />
@@ -418,7 +436,7 @@ export default function Settings() {
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.3 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <Palette className="w-5 h-5 text-purple-400" />
@@ -446,7 +464,7 @@ export default function Settings() {
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
+            transition={{ delay: 0.35 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <Calendar className="w-5 h-5 text-purple-400" />
@@ -505,11 +523,11 @@ export default function Settings() {
           </motion.div>
 
           {/* Quick Links */}
-          <motion.div 
+          <motion.div
             className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.45 }}
           >
             <div className="flex items-center gap-3 mb-6">
               <LinkIcon className="w-5 h-5 text-purple-400" />
@@ -530,7 +548,7 @@ export default function Settings() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
+            transition={{ delay: 0.5 }}
           >
             <Button
               onClick={handleLogout}

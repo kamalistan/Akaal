@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Phone, BarChart3, Trophy, Zap, Settings, Users } from 'lucide-react';
+import { Phone, BarChart3, Trophy, Zap, Settings, Users, PhoneCall } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 
 const tabs = [
   { name: 'Dialer', icon: Phone, page: 'Home' },
+  { name: 'Triple Line', icon: PhoneCall, page: 'TripleLineDialing' },
   { name: 'Leads', icon: Users, page: 'Leads' },
   { name: 'Metrics', icon: BarChart3, page: 'Metrics' },
   { name: 'Achievements', icon: Trophy, page: 'Achievements' },

@@ -14,6 +14,8 @@ import Settings from "./Settings";
 
 import PhoneManager from "./PhoneManager";
 
+import TripleLineDialing from "./TripleLineDialing";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -31,6 +33,8 @@ const PAGES = {
     Settings: Settings,
 
     PhoneManager: PhoneManager,
+
+    TripleLineDialing: TripleLineDialing,
 
 }
 
@@ -72,6 +76,8 @@ function PagesContent() {
                 <Route path="/Settings" element={<Settings />} />
 
                 <Route path="/PhoneManager" element={<PhoneManager />} />
+
+                <Route path="/TripleLineDialing" element={<TripleLineDialing />} />
 
             </Routes>
         </Layout>

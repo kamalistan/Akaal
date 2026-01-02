@@ -13,9 +13,11 @@ import AIPerformanceCoach from '@/components/ai/AIPerformanceCoach';
 import SessionRecoveryModal from '@/components/dialer/SessionRecoveryModal';
 import DialerFAB from '@/components/dialer/DialerFAB';
 import { createSessionManager } from '@/utils/sessionManager';
-import { Link as LinkIcon, Filter, BarChart3, PhoneCall } from 'lucide-react';
+import { Link as LinkIcon, Filter, BarChart3, PhoneCall, Zap, ArrowRight } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { useTheme } from '@/contexts/ThemeContext';
 
 export default function Home() {
@@ -327,9 +329,47 @@ export default function Home() {
           {/* Right column - Session Stats & Level Info */}
           <div className="space-y-6">
             <SessionStats stats={userStats} />
-            
+
+            {/* Triple-Line Dialer Promo */}
+            <motion.div
+              className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 backdrop-blur-sm rounded-3xl p-6 border border-cyan-500/30"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.25 }}
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                  <Zap className="h-6 w-6 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Triple-Line Power Dialer</h3>
+                  <p className="text-cyan-200 text-sm">Call 3 leads at once, connect only to humans</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-4 text-sm text-cyan-100">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                  <span>3x faster contact rate</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                  <span>Auto-skip voicemails with AMD</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                  <span>Talk only to real humans</span>
+                </div>
+              </div>
+              <Link to={createPageUrl('TripleLineDialing')}>
+                <Button className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700">
+                  Try Triple-Line Dialer
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </Link>
+            </motion.div>
+
             {/* Level Details */}
-            <motion.div 
+            <motion.div
               className="bg-[#2d1f4a]/50 backdrop-blur-sm rounded-3xl p-6 border border-purple-500/20"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}

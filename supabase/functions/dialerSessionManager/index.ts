@@ -27,7 +27,12 @@ Deno.serve(async (req: Request) => {
     // GET /active - Get or create active session
     if (req.method === 'GET' && path === 'active') {
       const userEmail = url.searchParams.get('userEmail');
-      const pipelineId = url.searchParams.get('pipelineId');
+      let pipelineId = url.searchParams.get('pipelineId');
+
+      // Convert string "null" or empty string to actual null
+      if (pipelineId === 'null' || pipelineId === '' || pipelineId === 'undefined') {
+        pipelineId = null;
+      }
 
       if (!userEmail) {
         throw new Error('userEmail is required');

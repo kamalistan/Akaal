@@ -12,7 +12,14 @@ export async function callEdgeFunction(functionName, payload = {}, options = {})
   // Build URL with query params for GET requests
   let url = `${supabaseUrl}/functions/v1/${functionName}`;
   if (method === 'GET' && Object.keys(params).length > 0) {
-    const searchParams = new URLSearchParams(params);
+    // Filter out null/undefined values to avoid sending "null" as string
+    const filteredParams = Object.entries(params).reduce((acc, [key, value]) => {
+      if (value !== null && value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    const searchParams = new URLSearchParams(filteredParams);
     url += `?${searchParams.toString()}`;
   }
 

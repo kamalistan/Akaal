@@ -99,32 +99,38 @@ export default function Leads() {
   });
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ['allLeads'],
+    queryKey: ['allLeads', currentUser?.email],
     queryFn: async () => {
+      if (!currentUser?.email) return [];
       const { data, error } = await supabase
         .from('leads')
         .select(`
           *,
           pipeline:ghl_pipelines(id, name, stages)
         `)
+        .eq('user_email', currentUser.email)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data || [];
     },
+    enabled: !!currentUser?.email,
   });
 
   const { data: pipelines = [] } = useQuery({
-    queryKey: ['pipelines'],
+    queryKey: ['pipelines', currentUser?.email],
     queryFn: async () => {
+      if (!currentUser?.email) return [];
       const { data, error } = await supabase
         .from('ghl_pipelines')
         .select('*')
+        .eq('user_email', currentUser.email)
         .order('name');
 
       if (error && error.code !== 'PGRST116') throw error;
       return data || [];
     },
+    enabled: !!currentUser?.email,
   });
 
   const createMutation = useMutation({
@@ -135,6 +141,7 @@ export default function Leads() {
           ...data,
           status: 'new',
           call_count: 0,
+          user_email: currentUser?.email || 'demo@example.com',
         });
 
       if (error) throw error;
@@ -169,11 +176,13 @@ export default function Leads() {
   });
 
   const { data: ghlData, isLoading: ghlLoading, error: ghlError } = useQuery({
-    queryKey: ['ghlPipelines'],
+    queryKey: ['ghlPipelines', currentUser?.email],
     queryFn: async () => {
-      return await callEdgeFunction('ghlGetPipelines', {});
+      return await callEdgeFunction('ghlGetPipelines', {
+        userEmail: currentUser?.email || 'demo@example.com',
+      });
     },
-    enabled: showGHLModal,
+    enabled: showGHLModal && !!currentUser?.email,
   });
 
   const selectedPipelineData = ghlData?.pipelines?.find(p => p.id === selectedPipeline);
@@ -185,6 +194,7 @@ export default function Leads() {
     setIsImporting(true);
     try {
       const response = await callEdgeFunction('ghlImportLeads', {
+        userEmail: currentUser?.email || 'demo@example.com',
         pipelineId: selectedPipeline,
         stageId: selectedStage,
         locationId: ghlData.locationId

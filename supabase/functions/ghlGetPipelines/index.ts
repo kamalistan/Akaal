@@ -16,17 +16,30 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const ghlApiKey = Deno.env.get('GHL_API_KEY');
-    const ghlLocationId = Deno.env.get('GHL_LOCATION_ID');
+    const { userEmail } = await req.json();
 
-    if (!ghlApiKey || !ghlLocationId) {
-      throw new Error('GoHighLevel API key or Location ID not configured. Please add GHL_API_KEY and GHL_LOCATION_ID to your environment variables.');
+    if (!userEmail) {
+      throw new Error('userEmail is required');
     }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+
+    const { data: credentials, error: credError } = await supabase
+      .from('ghl_credentials')
+      .select('*')
+      .eq('user_email', userEmail)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (credError || !credentials) {
+      throw new Error('No active GHL credentials found. Please connect your GHL account first.');
+    }
+
+    const ghlApiKey = credentials.ghl_api_key;
+    const ghlLocationId = credentials.ghl_location_id;
 
     const pipelinesResponse = await fetch(
       `https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${ghlLocationId}`,
@@ -52,6 +65,7 @@ Deno.serve(async (req: Request) => {
         .from('ghl_pipelines')
         .select('id')
         .eq('ghl_pipeline_id', pipeline.id)
+        .eq('user_email', userEmail)
         .maybeSingle();
 
       if (existing) {
@@ -73,6 +87,7 @@ Deno.serve(async (req: Request) => {
             stages: pipeline.stages || [],
             location_id: ghlLocationId,
             is_active: true,
+            user_email: userEmail,
           });
       }
     }

@@ -16,11 +16,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { pipelineId, locationId, stageId, pipelineStageIds } = await req.json();
-    const ghlApiKey = Deno.env.get('GHL_API_KEY');
+    const { userEmail, pipelineId, locationId, stageId, pipelineStageIds } = await req.json();
 
-    if (!ghlApiKey) {
-      throw new Error('GoHighLevel API key not configured');
+    if (!userEmail) {
+      throw new Error('userEmail is required');
     }
 
     const supabase = createClient(
@@ -28,10 +27,25 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    const { data: credentials, error: credError } = await supabase
+      .from('ghl_credentials')
+      .select('*')
+      .eq('user_email', userEmail)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (credError || !credentials) {
+      throw new Error('No active GHL credentials found. Please connect your GHL account first.');
+    }
+
+    const ghlApiKey = credentials.ghl_api_key;
+    const ghlLocationId = credentials.ghl_location_id;
+
     const { data: pipelineData } = await supabase
       .from('ghl_pipelines')
       .select('id')
       .eq('ghl_pipeline_id', pipelineId)
+      .eq('user_email', userEmail)
       .maybeSingle();
 
     if (!pipelineData) {
@@ -46,6 +60,7 @@ Deno.serve(async (req: Request) => {
         sync_type: 'pipeline_import',
         pipeline_id: pipelineData.id,
         status: 'in_progress',
+        user_email: userEmail,
       });
 
     const stagesToFilter = pipelineStageIds || (stageId ? [stageId] : []);
@@ -61,7 +76,7 @@ Deno.serve(async (req: Request) => {
 
     while (hasMorePages) {
       const searchParams = new URLSearchParams({
-        location_id: locationId,
+        location_id: ghlLocationId,
         pipeline_id: pipelineId,
         limit: '100',
       });
@@ -150,6 +165,7 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase
           .from('leads')
           .select('id, ghl_opportunity_id')
+          .eq('user_email', userEmail)
           .or(`ghl_opportunity_id.eq.${opp.id},phone.eq.${contactPhone}`)
           .maybeSingle();
 
@@ -171,6 +187,7 @@ Deno.serve(async (req: Request) => {
           notes: opp.notes || null,
           last_synced_at: new Date().toISOString(),
           status: mapOpportunityStatusToLeadStatus(opp.status),
+          user_email: userEmail,
         };
 
         if (existing) {

@@ -56,13 +56,20 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Create new session
-      const { data: leads } = await supabase
+      // Create new session - build query conditionally
+      let leadsQuery = supabase
         .from('leads')
         .select('id')
-        .eq('pipeline_id', pipelineId)
+        .eq('user_email', userEmail)
         .eq('is_dnc', false)
         .order('last_called_at', { ascending: true, nullsFirst: true });
+
+      // Only filter by pipeline if one is specified
+      if (pipelineId) {
+        leadsQuery = leadsQuery.eq('pipeline_id', pipelineId);
+      }
+
+      const { data: leads } = await leadsQuery;
 
       const { data: newSession, error } = await supabase
         .from('dialer_sessions')
@@ -87,10 +94,10 @@ Deno.serve(async (req: Request) => {
 
     // POST /next-lead - Get next undialed lead
     if (req.method === 'POST' && path === 'next-lead') {
-      const { sessionId, pipelineId } = await req.json();
+      const { sessionId, pipelineId, userEmail } = await req.json();
 
-      if (!sessionId) {
-        throw new Error('sessionId is required');
+      if (!sessionId || !userEmail) {
+        throw new Error('sessionId and userEmail are required');
       }
 
       // Use database function to get next lead
@@ -98,6 +105,7 @@ Deno.serve(async (req: Request) => {
         .rpc('get_next_undialed_lead', {
           p_session_id: sessionId,
           p_pipeline_id: pipelineId || null,
+          p_user_email: userEmail,
         })
         .maybeSingle();
 

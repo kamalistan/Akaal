@@ -90,10 +90,12 @@ export default function TripleLineDialing() {
     if (!currentUser?.email) return;
 
     try {
-      const response = await callEdgeFunction('dialerSessionManager/start', {
-        userEmail: currentUser.email,
-        pipelineId: selectedPipeline !== 'all' ? selectedPipeline : null,
-        sessionType: 'triple_line',
+      const response = await callEdgeFunction('dialerSessionManager/active', {}, {
+        method: 'GET',
+        params: {
+          userEmail: currentUser.email,
+          pipelineId: selectedPipeline !== 'all' ? selectedPipeline : null,
+        }
       });
 
       if (response.success) {
@@ -120,6 +122,7 @@ export default function TripleLineDialing() {
       try {
         const response = await callEdgeFunction('dialerSessionManager/next-lead', {
           sessionId: sessId || sessionId,
+          userEmail: currentUser.email,
         });
 
         if (response.success && response.lead) {
@@ -215,7 +218,7 @@ export default function TripleLineDialing() {
     if (!sessionId) return;
 
     try {
-      await callEdgeFunction('dialerSessionManager/end', {
+      await callEdgeFunction('dialerSessionManager/end-session', {
         sessionId,
       });
 
